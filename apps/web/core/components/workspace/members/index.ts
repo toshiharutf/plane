@@ -5,3 +5,4 @@
  */
 
 export * from "./invite-modal";
+export * from "./create-ai-bot-member-modal";

@@ -10,9 +10,13 @@ from plane.db.models import ProjectMember, WorkspaceMember
 from plane.db.models.project import ROLE
 
 
+def is_bot_user(user):
+    return getattr(user, "is_bot", False)
+
+
 class ProjectBasePermission(BasePermission):
     def has_permission(self, request, view):
-        if request.user.is_anonymous:
+        if request.user.is_anonymous or is_bot_user(request.user):
             return False
 
         ## Safe Methods -> Handle the filtering logic in queryset
@@ -55,7 +59,7 @@ class ProjectBasePermission(BasePermission):
 
 class ProjectMemberPermission(BasePermission):
     def has_permission(self, request, view):
-        if request.user.is_anonymous:
+        if request.user.is_anonymous or is_bot_user(request.user):
             return False
 
         ## Safe Methods -> Handle the filtering logic in queryset
@@ -87,7 +91,7 @@ class ProjectMemberPermission(BasePermission):
 
 class ProjectEntityPermission(BasePermission):
     def has_permission(self, request, view):
-        if request.user.is_anonymous:
+        if request.user.is_anonymous or is_bot_user(request.user):
             return False
 
         # Handle requests based on project__identifier
@@ -121,7 +125,7 @@ class ProjectEntityPermission(BasePermission):
 
 class ProjectAdminPermission(BasePermission):
     def has_permission(self, request, view):
-        if request.user.is_anonymous:
+        if request.user.is_anonymous or is_bot_user(request.user):
             return False
 
         return ProjectMember.objects.filter(
@@ -135,7 +139,7 @@ class ProjectAdminPermission(BasePermission):
 
 class ProjectLitePermission(BasePermission):
     def has_permission(self, request, view):
-        if request.user.is_anonymous:
+        if request.user.is_anonymous or is_bot_user(request.user):
             return False
 
         return ProjectMember.objects.filter(

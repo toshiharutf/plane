@@ -9,6 +9,8 @@ import type {
   IWorkspace,
   IWorkspaceMemberMe,
   IWorkspaceMember,
+  IWorkspaceAIBotMemberCreateData,
+  IWorkspaceAIBotMemberCreateResponse,
   IWorkspaceMemberInvitation,
   ILastActiveWorkspaceDetails,
   IWorkspaceSearchResults,
@@ -77,6 +79,17 @@ export class WorkspaceService extends APIService {
 
   async inviteWorkspace(workspaceSlug: string, data: IWorkspaceBulkInviteFormData): Promise<any> {
     return this.post(`/api/workspaces/${workspaceSlug}/invitations/`, data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async createAIBotMember(
+    workspaceSlug: string,
+    data: IWorkspaceAIBotMemberCreateData
+  ): Promise<IWorkspaceAIBotMemberCreateResponse> {
+    return this.post(`/api/workspaces/${workspaceSlug}/ai-bot-members/`, data)
       .then((response) => response?.data)
       .catch((error) => {
         throw error?.response?.data;

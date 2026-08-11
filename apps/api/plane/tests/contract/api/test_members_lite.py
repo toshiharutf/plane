@@ -24,6 +24,7 @@ _LITE_MEMBER_FIELDS = (
     "role",
     "is_active",
     "is_bot",
+    "bot_type",
 )
 
 

@@ -2,7 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
+import logging
+import os
+
 # Django imports
+from django.conf import settings
 from django.shortcuts import render
 
 # Third party imports
@@ -24,6 +28,8 @@ from django.middleware.csrf import get_token
 from plane.utils.cache import invalidate_cache
 from plane.authentication.utils.host import base_host
 
+logger = logging.getLogger(__name__)
+
 
 class CSRFTokenEndpoint(APIView):
     permission_classes = [AllowAny]
@@ -37,10 +43,32 @@ class CSRFTokenEndpoint(APIView):
 
 def csrf_failure(request, reason=""):
     """Custom CSRF failure view"""
+    is_local_settings = os.environ.get("DJANGO_SETTINGS_MODULE") == "plane.settings.local"
+
+    if is_local_settings:
+        logger.warning(
+            "CSRF failure: reason=%s path=%s method=%s host=%s origin=%s referer=%s "
+            "cookie_present=%s csrf_meta_present=%s form_token_present=%s content_type=%s",
+            reason,
+            request.path,
+            request.method,
+            request.get_host(),
+            request.META.get("HTTP_ORIGIN", ""),
+            request.META.get("HTTP_REFERER", ""),
+            settings.CSRF_COOKIE_NAME in request.COOKIES,
+            bool(request.META.get("CSRF_COOKIE")),
+            bool(request.POST.get("csrfmiddlewaretoken")),
+            request.META.get("CONTENT_TYPE", ""),
+        )
+
     return render(
         request,
         "csrf_failure.html",
-        {"reason": reason, "root_url": base_host(request=request)},
+        {
+            "reason": reason,
+            "debug_reason": reason if is_local_settings else "",
+            "root_url": base_host(request=request),
+        },
     )
 
 

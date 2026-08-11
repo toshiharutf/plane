@@ -14,7 +14,8 @@ import { ROLE, EUserPermissions, EUserPermissionsLevel, MEMBER_TRACKER_ELEMENTS 
 import { TrashIcon, SuspendedUserIcon } from "@plane/propel/icons";
 import { Pill, EPillVariant, EPillSize } from "@plane/propel/pill";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
-import type { IUser, IWorkspaceMember } from "@plane/types";
+import { EUserBotType } from "@plane/types";
+import type { IUser, IUserLite } from "@plane/types";
 // plane ui
 import { CustomSelect, PopoverMenu } from "@plane/ui";
 // helpers
@@ -24,7 +25,7 @@ import { useMember } from "@/hooks/store/use-member";
 import { useUser, useUserPermissions } from "@/hooks/store/user";
 
 export interface RowData {
-  member: IWorkspaceMember;
+  member: IUserLite;
   role: EUserPermissions;
   is_active: boolean;
 }
@@ -47,6 +48,7 @@ export function NameColumn(props: NameProps) {
   // derived values
   const { avatar_url, display_name, email, first_name, id, last_name } = rowData.member;
   const isSuspended = rowData.is_active === false;
+  const isAIBot = rowData.member.is_bot && rowData.member.bot_type === EUserBotType.AI_AGENT;
 
   return (
     <Disclosure>
@@ -75,9 +77,16 @@ export function NameColumn(props: NameProps) {
                   </span>
                 </Link>
               )}
-              <span className={isSuspended ? "text-placeholder" : ""}>
-                {first_name} {last_name}
-              </span>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className={`truncate ${isSuspended ? "text-placeholder" : ""}`}>
+                  {first_name} {last_name}
+                </span>
+                {isAIBot && (
+                  <Pill variant={EPillVariant.DEFAULT} size={EPillSize.XS} className="shrink-0 border-none">
+                    AI bot
+                  </Pill>
+                )}
+              </div>
             </div>
 
             {!isSuspended && (isAdmin || id === currentUser?.id) && (
@@ -129,8 +138,9 @@ export const AccountTypeColumn = observer(function AccountTypeColumn(props: Acco
 
   // derived values
   const isCurrentUser = currentUser?.id === rowData.member.id;
+  const isAIBot = rowData.member.is_bot && rowData.member.bot_type === EUserBotType.AI_AGENT;
   const isAdminRole = allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.WORKSPACE);
-  const isRoleNonEditable = isCurrentUser || !isAdminRole;
+  const isRoleNonEditable = isCurrentUser || isAIBot || !isAdminRole;
   const isSuspended = rowData.is_active === false;
 
   return (

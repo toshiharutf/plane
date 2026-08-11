@@ -30,6 +30,7 @@ from django.conf import settings
 
 # Third party imports
 from rest_framework import status
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 
 # drf-spectacular imports
@@ -76,7 +77,10 @@ from plane.db.models import (
     Project,
     ProjectMember,
     CycleIssue,
+    BotTypeEnum,
+    IssueAssignee,
     Workspace,
+    WorkspaceMember,
 )
 from plane.settings.storage import S3Storage
 from plane.utils.path_validator import sanitize_filename
@@ -161,6 +165,9 @@ from plane.utils.openapi import (
 from plane.bgtasks.work_item_link_task import crawl_work_item_link_title
 
 
+AI_BOT_ALLOWED_ISSUE_UPDATE_FIELDS = {"description_html", "description_binary", "state"}
+
+
 def user_has_issue_permission(user_id, project_id, issue=None, allowed_roles=None, allow_creator=True):
     if allow_creator and issue is not None and user_id == issue.created_by_id:
         return True
@@ -176,6 +183,58 @@ def user_has_issue_permission(user_id, project_id, issue=None, allowed_roles=Non
     return qs.exists()
 
 
+def is_workspace_ai_agent(user, workspace_slug):
+    return (
+        user.is_authenticated
+        and user.is_bot
+        and user.bot_type == BotTypeEnum.AI_AGENT
+        and WorkspaceMember.objects.filter(
+            workspace__slug=workspace_slug, member=user, role__gte=15, is_active=True
+        ).exists()
+    )
+
+
+def request_updates_only_ai_bot_issue_fields(data):
+    requested_fields = set(data.keys())
+    return bool(requested_fields) and requested_fields.issubset(AI_BOT_ALLOWED_ISSUE_UPDATE_FIELDS)
+
+
+def issue_is_assigned_only_to_user(issue_id, project_id, workspace_slug, user_id):
+    assignee_ids = set(
+        IssueAssignee.objects.filter(
+            issue_id=issue_id,
+            project_id=project_id,
+            workspace__slug=workspace_slug,
+            deleted_at__isnull=True,
+        ).values_list("assignee_id", flat=True)
+    )
+    return assignee_ids == {user_id}
+
+
+class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
+    def has_permission(self, request, view):
+        if super().has_permission(request, view):
+            return True
+
+        if not is_workspace_ai_agent(request.user, view.workspace_slug):
+            return False
+
+        if request.method in SAFE_METHODS:
+            return True
+
+        if request.method != "PATCH":
+            return False
+
+        issue_id = view.kwargs.get("pk")
+        project_id = view.project_id
+        return bool(
+            issue_id
+            and project_id
+            and request_updates_only_ai_bot_issue_fields(request.data)
+            and issue_is_assigned_only_to_user(issue_id, project_id, view.workspace_slug, request.user.id)
+        )
+
+
 class WorkspaceIssueAPIEndpoint(BaseAPIView):
     """
     This viewset provides `retrieveByIssueId` on workspace level
@@ -184,7 +243,7 @@ class WorkspaceIssueAPIEndpoint(BaseAPIView):
 
     model = Issue
     webhook_event = "issue"
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotWorkItemPermission]
     serializer_class = IssueSerializer
     use_read_replica = True
 
@@ -260,7 +319,7 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
 
     model = Issue
     webhook_event = "issue"
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotWorkItemPermission]
     serializer_class = IssueSerializer
     use_read_replica = True
 
@@ -527,7 +586,7 @@ class IssueDetailAPIEndpoint(BaseAPIView):
 
     model = Issue
     webhook_event = "issue"
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotWorkItemPermission]
     serializer_class = IssueSerializer
     use_read_replica = True
 

@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { Bot } from "lucide-react";
 import { observer } from "mobx-react";
 // types
 import { EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
@@ -21,7 +22,7 @@ import { PageHead } from "@/components/core/page-title";
 import { MemberListFiltersDropdown } from "@/components/project/dropdowns/filters/member-list";
 import { WorkspaceMembersList } from "@/components/workspace/settings/members-list";
 import { SettingsContentWrapper } from "@/components/settings/content-wrapper";
-import { SendWorkspaceInvitationModal } from "@/components/workspace/members";
+import { CreateAIBotMemberModal, SendWorkspaceInvitationModal } from "@/components/workspace/members";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 import { useWorkspace } from "@/hooks/store/use-workspace";
@@ -33,6 +34,7 @@ import { MembersWorkspaceSettingsHeader } from "./header";
 const WorkspaceMembersSettingsPage = observer(function WorkspaceMembersSettingsPage({ params }: Route.ComponentProps) {
   // states
   const [inviteModal, setInviteModal] = useState(false);
+  const [createAIBotModal, setCreateAIBotModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   // router
   const { workspaceSlug } = params;
@@ -106,6 +108,11 @@ const WorkspaceMembersSettingsPage = observer(function WorkspaceMembersSettingsP
         onClose={() => setInviteModal(false)}
         onSubmit={handleWorkspaceInvite}
       />
+      <CreateAIBotMemberModal
+        isOpen={createAIBotModal}
+        onClose={() => setCreateAIBotModal(false)}
+        workspaceSlug={workspaceSlug}
+      />
       <section
         className={cn("size-full", {
           "opacity-60": !canPerformWorkspaceMemberActions,
@@ -136,9 +143,19 @@ const WorkspaceMembersSettingsPage = observer(function WorkspaceMembersSettingsP
               memberType="workspace"
             />
             {canPerformWorkspaceAdminActions && (
-              <Button variant="primary" size="lg" onClick={() => setInviteModal(true)}>
-                {t("workspace_settings.settings.members.add_member")}
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  prependIcon={<Bot />}
+                  onClick={() => setCreateAIBotModal(true)}
+                >
+                  Create AI bot
+                </Button>
+                <Button variant="primary" size="lg" onClick={() => setInviteModal(true)}>
+                  {t("workspace_settings.settings.members.add_member")}
+                </Button>
+              </>
             )}
           </div>
         </div>

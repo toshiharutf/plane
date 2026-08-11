@@ -7,13 +7,14 @@ from django.db import IntegrityError
 
 # Third party imports
 from rest_framework import status
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 from drf_spectacular.utils import OpenApiResponse, OpenApiRequest
 
 # Module imports
 from plane.api.serializers import StateSerializer
 from plane.app.permissions import ProjectEntityPermission
-from plane.db.models import Issue, State
+from plane.db.models import BotTypeEnum, Issue, State, WorkspaceMember
 from .base import BaseAPIView
 from plane.utils.openapi import (
     state_docs,
@@ -36,28 +37,48 @@ from plane.utils.openapi import (
 )
 
 
+def is_workspace_ai_agent(user, workspace_slug):
+    return (
+        user.is_authenticated
+        and user.is_bot
+        and user.bot_type == BotTypeEnum.AI_AGENT
+        and WorkspaceMember.objects.filter(
+            workspace__slug=workspace_slug, member=user, role__gte=15, is_active=True
+        ).exists()
+    )
+
+
+class ProjectEntityOrAIBotReadOnlyStatePermission(ProjectEntityPermission):
+    def has_permission(self, request, view):
+        if super().has_permission(request, view):
+            return True
+
+        return request.method in SAFE_METHODS and is_workspace_ai_agent(request.user, view.workspace_slug)
+
+
 class StateListCreateAPIEndpoint(BaseAPIView):
     """State List and Create Endpoint"""
 
     serializer_class = StateSerializer
     model = State
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotReadOnlyStatePermission]
     use_read_replica = True
 
     def get_queryset(self):
-        return (
+        queryset = (
             State.objects.filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
-            .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
-            )
             .filter(is_triage=False)
             .filter(project__archived_at__isnull=True)
             .select_related("project")
             .select_related("workspace")
-            .distinct()
         )
+        if not is_workspace_ai_agent(self.request.user, self.kwargs.get("slug")):
+            queryset = queryset.filter(
+                project__project_projectmember__member=self.request.user,
+                project__project_projectmember__is_active=True,
+            )
+        return queryset.distinct()
 
     @state_docs(
         operation_id="create_state",
@@ -164,23 +185,24 @@ class StateDetailAPIEndpoint(BaseAPIView):
 
     serializer_class = StateSerializer
     model = State
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotReadOnlyStatePermission]
     use_read_replica = True
 
     def get_queryset(self):
-        return (
+        queryset = (
             State.objects.filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
-            .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
-            )
             .filter(is_triage=False)
             .filter(project__archived_at__isnull=True)
             .select_related("project")
             .select_related("workspace")
-            .distinct()
         )
+        if not is_workspace_ai_agent(self.request.user, self.kwargs.get("slug")):
+            queryset = queryset.filter(
+                project__project_projectmember__member=self.request.user,
+                project__project_projectmember__is_active=True,
+            )
+        return queryset.distinct()
 
     @state_docs(
         operation_id="retrieve_state",

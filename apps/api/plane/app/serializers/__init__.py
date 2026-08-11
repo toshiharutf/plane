@@ -21,6 +21,7 @@ from .workspace import (
     WorkSpaceMemberInvitePublicSerializer,
     WorkspaceLiteSerializer,
     WorkspaceThemeSerializer,
+    AIBotMemberCreateSerializer,
     WorkspaceMemberAdminSerializer,
     WorkspaceMemberMeSerializer,
     WorkspaceUserPropertiesSerializer,

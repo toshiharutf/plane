@@ -70,6 +70,7 @@ from plane.utils.grouper import (
 )
 from plane.utils.host import base_host
 from plane.utils.issue_filters import issue_filters
+from plane.utils.members import active_assignee_q, active_issue_assignee_q
 from plane.utils.order_queryset import order_issue_queryset
 from plane.utils.paginator import GroupedOffsetPaginator, SubGroupedOffsetPaginator
 from plane.utils.timezone_converter import user_timezone_converter
@@ -540,10 +541,8 @@ class IssueViewSet(BaseViewSet):
                 ),
                 assignee_ids=Coalesce(
                     Subquery(
-                        IssueAssignee.objects.filter(
-                            issue_id=OuterRef("pk"),
-                            assignee__member_project__is_active=True,
-                        )
+                        IssueAssignee.objects.filter(issue_id=OuterRef("pk"), deleted_at__isnull=True)
+                        .filter(active_issue_assignee_q())
                         .values("issue_id")
                         .annotate(arr=ArrayAgg("assignee_id", distinct=True))
                         .values("arr")
@@ -648,7 +647,7 @@ class IssueViewSet(BaseViewSet):
                         distinct=True,
                         filter=Q(
                             ~Q(assignees__id__isnull=True)
-                            & Q(assignees__member_project__is_active=True)
+                            & active_assignee_q()
                             & Q(issue_assignee__deleted_at__isnull=True)
                         ),
                     ),
@@ -936,10 +935,8 @@ class IssuePaginatedViewSet(BaseViewSet):
             ),
             assignee_ids=Coalesce(
                 Subquery(
-                    IssueAssignee.objects.filter(
-                        issue_id=OuterRef("pk"),
-                        assignee__member_project__is_active=True,
-                    )
+                    IssueAssignee.objects.filter(issue_id=OuterRef("pk"), deleted_at__isnull=True)
+                    .filter(active_issue_assignee_q())
                     .values("issue_id")
                     .annotate(arr=ArrayAgg("assignee_id", distinct=True))
                     .values("arr")
@@ -1273,7 +1270,7 @@ class IssueDetailIdentifierEndpoint(BaseAPIView):
                         distinct=True,
                         filter=Q(
                             ~Q(assignees__id__isnull=True)
-                            & Q(assignees__member_project__is_active=True)
+                            & active_assignee_q()
                             & Q(issue_assignee__deleted_at__isnull=True)
                         ),
                     ),

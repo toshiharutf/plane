@@ -8,6 +8,7 @@ import type { TPaginationInfo } from "./common";
 import type { ICycle } from "./cycle";
 import type { TUserPermissions } from "./enums";
 import type { TProjectMembership } from "./project";
+import type { IApiToken } from "./api_token";
 import type { IUser, IUserLite } from "./users";
 import type { TLoginMediums } from "./instance";
 import type { IWorkspaceViewProps } from "./view-props";
@@ -61,6 +62,18 @@ export interface IWorkspaceMemberInvitation {
 
 export interface IWorkspaceBulkInviteFormData {
   emails: { email: string; role: TUserPermissions }[];
+}
+
+export interface IWorkspaceAIBotMemberCreateData {
+  display_name: string;
+  email?: string;
+  token_label?: string;
+  expired_at?: string | null;
+}
+
+export interface IWorkspaceAIBotMemberCreateResponse {
+  workspace_member: IWorkspaceMember;
+  api_token: IApiToken;
 }
 
 export type Properties = {

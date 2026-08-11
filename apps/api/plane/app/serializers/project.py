@@ -25,6 +25,7 @@ from plane.db.models import (
 from plane.utils.content_validator import (
     validate_html_content,
 )
+from plane.utils.members import is_visible_user
 
 
 class ProjectSerializer(BaseSerializer):
@@ -126,7 +127,9 @@ class ProjectListSerializer(DynamicBaseSerializer):
         project_members = getattr(obj, "members_list", None)
         if project_members is not None:
             # Filter members by the project ID
-            return [member.member_id for member in project_members if member.is_active and not member.member.is_bot]
+            return [
+                member.member_id for member in project_members if member.is_active and is_visible_user(member.member)
+            ]
         return []
 
     def get_next_work_item_sequence(self, obj):

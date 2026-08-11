@@ -67,9 +67,16 @@ class ProjectMemberViewSet(BaseViewSet):
 
         # check the workspace role of the new user
         for member in member_roles:
-            workspace_member_role = WorkspaceMember.objects.get(
-                workspace__slug=slug, member=member, is_active=True
-            ).role
+            workspace_member = WorkspaceMember.objects.filter(
+                workspace__slug=slug, member=member, member__is_bot=False, is_active=True
+            ).first()
+            if not workspace_member:
+                return Response(
+                    {"error": "Only human workspace members can be added to projects"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            workspace_member_role = workspace_member.role
             if workspace_member_role in [20] and member_roles.get(member) in [5, 15]:
                 return Response(
                     {"error": "You cannot add a user with role lower than the workspace role"},
@@ -138,7 +145,8 @@ class ProjectMemberViewSet(BaseViewSet):
         project_members = ProjectMember.objects.filter(
             project_id=project_id,
             member_id__in=[member.get("member_id") for member in members],
-        )
+            member__is_bot=False,
+        ).select_related("member")
         # Send emails to notify the users
         [
             project_add_user_email.delay(
@@ -147,6 +155,7 @@ class ProjectMemberViewSet(BaseViewSet):
                 request.user.id,
             )
             for project_member in project_members
+            if not project_member.member.is_bot
         ]
         # Serialize the project members
         serializer = ProjectMemberRoleSerializer(project_members, many=True)
@@ -204,7 +213,9 @@ class ProjectMemberViewSet(BaseViewSet):
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def partial_update(self, request, slug, project_id, pk):
-        project_member = ProjectMember.objects.get(pk=pk, workspace__slug=slug, project_id=project_id, is_active=True)
+        project_member = ProjectMember.objects.get(
+            pk=pk, workspace__slug=slug, project_id=project_id, member__is_bot=False, is_active=True
+        )
 
         # Fetch the target's workspace role (used to cap the new project role)
         target_workspace_role = WorkspaceMember.objects.get(

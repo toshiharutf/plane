@@ -9,6 +9,7 @@ from plane.app.views import (
     UserWorkspaceInvitationsViewSet,
     WorkSpaceViewSet,
     WorkspaceJoinEndpoint,
+    WorkspaceAIBotMemberEndpoint,
     WorkSpaceMemberViewSet,
     WorkspaceInvitationsViewset,
     WorkspaceMemberUserEndpoint,
@@ -88,6 +89,11 @@ urlpatterns = [
         "workspaces/<str:slug>/members/",
         WorkSpaceMemberViewSet.as_view({"get": "list"}),
         name="workspace-member",
+    ),
+    path(
+        "workspaces/<str:slug>/ai-bot-members/",
+        WorkspaceAIBotMemberEndpoint.as_view(),
+        name="workspace-ai-bot-members",
     ),
     path(
         "workspaces/<str:slug>/project-members/",

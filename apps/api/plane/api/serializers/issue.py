@@ -31,6 +31,7 @@ from plane.utils.content_validator import (
     validate_html_content,
     validate_binary_data,
 )
+from plane.utils.members import get_assignable_issue_assignee_ids
 
 from .base import BaseSerializer
 from .cycle import CycleLiteSerializer, CycleSerializer
@@ -105,12 +106,11 @@ class IssueSerializer(BaseSerializer):
 
         # Validate assignees are from project
         if data.get("assignees", []):
-            data["assignees"] = ProjectMember.objects.filter(
+            data["assignees"] = get_assignable_issue_assignee_ids(
                 project_id=self.context.get("project_id"),
-                is_active=True,
-                role__gte=15,
-                member_id__in=data["assignees"],
-            ).values_list("member_id", flat=True)
+                workspace_id=self.context.get("workspace_id") or getattr(self.instance, "workspace_id", None),
+                member_ids=data["assignees"],
+            )
 
         # Validate labels are from project
         if data.get("labels", []):

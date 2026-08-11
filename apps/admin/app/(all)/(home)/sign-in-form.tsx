@@ -9,20 +9,17 @@ import { useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 // plane internal packages
 import type { EAdminAuthErrorCodes, TAdminAuthErrorInfo } from "@plane/constants";
-import { API_BASE_URL } from "@plane/constants";
 import { Button } from "@plane/propel/button";
 import { AuthService } from "@plane/services";
 import { Input, Spinner } from "@plane/ui";
 // components
 import { Banner } from "@/components/common/banner";
+import { getBrowserAlignedApiBaseUrl } from "@/helpers/api-base-url";
 // local components
 import { FormHeader } from "@/components/instance/form-header";
 import { AuthBanner } from "./auth-banner";
 import { AuthHeader } from "./auth-header";
 import { authErrorHandler } from "./auth-helpers";
-
-// service initialization
-const authService = new AuthService();
 
 // error codes
 enum EErrorCodes {
@@ -61,6 +58,8 @@ export function InstanceSignInForm() {
   const [formData, setFormData] = useState<TFormData>(defaultFromData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorInfo, setErrorInfo] = useState<TAdminAuthErrorInfo | undefined>(undefined);
+  const apiBaseUrl = useMemo(() => getBrowserAlignedApiBaseUrl(), []);
+  const authService = useMemo(() => new AuthService(apiBaseUrl), [apiBaseUrl]);
 
   const handleFormChange = (key: keyof TFormData, value: string | boolean) =>
     setFormData((prev) => ({ ...prev, [key]: value }));
@@ -95,8 +94,8 @@ export function InstanceSignInForm() {
   }, [errorCode, errorMessage]);
 
   const isButtonDisabled = useMemo(
-    () => (!isSubmitting && formData.email && formData.password ? false : true),
-    [formData.email, formData.password, isSubmitting]
+    () => (!isSubmitting && csrfToken && formData.email && formData.password ? false : true),
+    [csrfToken, formData.email, formData.password, isSubmitting]
   );
 
   useEffect(() => {
@@ -120,7 +119,7 @@ export function InstanceSignInForm() {
           <form
             className="space-y-4"
             method="POST"
-            action={`${API_BASE_URL}/api/instances/admins/sign-in/`}
+            action={`${apiBaseUrl}/api/instances/admins/sign-in/`}
             onSubmit={() => setIsSubmitting(true)}
             onError={() => setIsSubmitting(false)}
           >
@@ -129,7 +128,7 @@ export function InstanceSignInForm() {
             ) : (
               <>{errorInfo && <AuthBanner bannerData={errorInfo} handleBannerData={setErrorInfo} />}</>
             )}
-            <input type="hidden" name="csrfmiddlewaretoken" value={csrfToken} />
+            <input type="hidden" name="csrfmiddlewaretoken" value={csrfToken ?? ""} />
 
             <div className="w-full space-y-1">
               <label className="text-13 font-medium text-tertiary" htmlFor="email">

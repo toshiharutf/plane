@@ -44,6 +44,7 @@ from plane.app.serializers import (
     IssueDescriptionVersionDetailSerializer,
 )
 from plane.utils.issue_filters import issue_filters
+from plane.utils.members import active_assignee_q
 from plane.utils.order_queryset import INTAKE_ISSUE_ORDER_BY_ALLOWLIST, sanitize_order_by
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.bgtasks.issue_description_version_task import issue_description_version_task
@@ -153,7 +154,7 @@ class IntakeIssueViewSet(BaseViewSet):
                         distinct=True,
                         filter=Q(
                             ~Q(assignees__id__isnull=True)
-                            & Q(assignees__member_project__is_active=True)
+                            & active_assignee_q()
                             & Q(issue_assignee__deleted_at__isnull=True)
                         ),
                     ),
@@ -315,7 +316,7 @@ class IntakeIssueViewSet(BaseViewSet):
                             "issue__assignees__id",
                             distinct=True,
                             filter=~Q(issue__assignees__id__isnull=True)
-                            & Q(issue__assignees__member_project__is_active=True),
+                            & active_assignee_q(prefix="issue__assignees__"),
                         ),
                         Value([], output_field=ArrayField(UUIDField())),
                     ),

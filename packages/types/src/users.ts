@@ -22,14 +22,21 @@ export enum EStartOfTheWeek {
   SATURDAY = 6,
 }
 
+export enum EUserBotType {
+  WORKSPACE_SEED = "WORKSPACE_SEED",
+  AI_AGENT = "AI_AGENT",
+}
+
 export interface IUserLite {
   avatar_url: string;
+  bot_type?: EUserBotType | null;
   display_name: string;
   email?: string;
   first_name: string;
   id: string;
   is_bot: boolean;
   last_name: string;
+  last_login_medium?: TLoginMediums;
   joining_date?: string;
 }
 export interface IUser extends IUserLite {

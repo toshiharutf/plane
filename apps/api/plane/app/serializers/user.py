@@ -53,6 +53,7 @@ class UserSerializer(BaseSerializer):
             "is_email_verified",
             "is_active",
             "token_updated_at",
+            "bot_type",
         ]
 
         # If the user has already filled first name or last name then he is onboarded
@@ -76,6 +77,7 @@ class UserMeSerializer(BaseSerializer):
             "last_name",
             "is_active",
             "is_bot",
+            "bot_type",
             "is_email_verified",
             "user_timezone",
             "username",
@@ -148,9 +150,10 @@ class UserLiteSerializer(BaseSerializer):
             "avatar",
             "avatar_url",
             "is_bot",
+            "bot_type",
             "display_name",
         ]
-        read_only_fields = ["id", "is_bot"]
+        read_only_fields = ["id", "is_bot", "bot_type"]
 
 
 class UserAdminLiteSerializer(BaseSerializer):
@@ -163,11 +166,12 @@ class UserAdminLiteSerializer(BaseSerializer):
             "avatar",
             "avatar_url",
             "is_bot",
+            "bot_type",
             "display_name",
             "email",
             "last_login_medium",
         ]
-        read_only_fields = ["id", "is_bot"]
+        read_only_fields = ["id", "is_bot", "bot_type"]
 
 
 class ChangePasswordSerializer(serializers.Serializer):

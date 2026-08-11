@@ -9,7 +9,14 @@ import { action, computed, makeObservable, observable, runInAction } from "mobx"
 import { computedFn } from "mobx-utils";
 // types
 import type { EUserPermissions } from "@plane/constants";
-import type { IWorkspaceBulkInviteFormData, IWorkspaceMember, IWorkspaceMemberInvitation } from "@plane/types";
+import { EUserBotType } from "@plane/types";
+import type {
+  IWorkspaceAIBotMemberCreateData,
+  IWorkspaceAIBotMemberCreateResponse,
+  IWorkspaceBulkInviteFormData,
+  IWorkspaceMember,
+  IWorkspaceMemberInvitation,
+} from "@plane/types";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
 // types
@@ -51,6 +58,10 @@ export interface IWorkspaceMemberStore {
   // crud actions
   updateMember: (workspaceSlug: string, userId: string, data: { role: EUserPermissions }) => Promise<void>;
   removeMemberFromWorkspace: (workspaceSlug: string, userId: string) => Promise<void>;
+  createAIBotMember: (
+    workspaceSlug: string,
+    data: IWorkspaceAIBotMemberCreateData
+  ) => Promise<IWorkspaceAIBotMemberCreateResponse>;
   // invite actions
   inviteMembersToWorkspace: (workspaceSlug: string, data: IWorkspaceBulkInviteFormData) => Promise<void>;
   updateMemberInvitation: (
@@ -88,6 +99,7 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
       memberMap: computed,
       // actions
       fetchWorkspaceMembers: action,
+      createAIBotMember: action,
       updateMember: action,
       removeMemberFromWorkspace: action,
       fetchWorkspaceMemberInvitations: action,
@@ -132,8 +144,8 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
       (m) => m.member !== this.userStore?.data?.id,
       (m) => this.memberRoot?.memberMap?.[m.member]?.display_name?.toLowerCase(),
     ]);
-    //filter out bots
-    const memberIds = members.filter((m) => !this.memberRoot?.memberMap?.[m.member]?.is_bot).map((m) => m.member);
+    // filter out internal bots while keeping user-created AI agents assignable
+    const memberIds = members.filter((m) => this.isVisibleWorkspaceMember(m.member)).map((m) => m.member);
     return memberIds;
   });
 
@@ -143,8 +155,8 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
    */
   getFilteredWorkspaceMemberIds = computedFn((workspaceSlug: string) => {
     let members = Object.values(this.workspaceMemberMap?.[workspaceSlug] ?? {});
-    //filter out bots and inactive members
-    members = members.filter((m) => !this.memberRoot?.memberMap?.[m.member]?.is_bot);
+    // filter out internal bots while keeping user-created AI agents assignable
+    members = members.filter((m) => this.isVisibleWorkspaceMember(m.member));
 
     // Use filters store to get filtered member ids
     const memberIds = this.filtersStore.getFilteredMemberIds(
@@ -170,7 +182,9 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
       if (!memberDetails) return false;
       const memberSearchQuery = `${memberDetails.member.first_name} ${memberDetails.member.last_name} ${
         memberDetails.member?.display_name
-      } ${memberDetails.member.email ?? ""}`;
+      } ${memberDetails.member.email ?? ""} ${
+        memberDetails.member.is_bot && memberDetails.member.bot_type === EUserBotType.AI_AGENT ? "ai bot" : ""
+      }`;
       return memberSearchQuery.toLowerCase()?.includes(searchQuery.toLowerCase());
     });
     return searchedWorkspaceMemberIds;
@@ -247,6 +261,29 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
       });
       return response;
     });
+
+  createAIBotMember = async (
+    workspaceSlug: string,
+    data: IWorkspaceAIBotMemberCreateData
+  ): Promise<IWorkspaceAIBotMemberCreateResponse> => {
+    const response = await this.workspaceService.createAIBotMember(workspaceSlug, data);
+    const workspaceMember = response.workspace_member;
+
+    runInAction(() => {
+      set(this.memberRoot?.memberMap, workspaceMember.member.id, {
+        ...workspaceMember.member,
+        joining_date: workspaceMember.created_at,
+      });
+      set(this.workspaceMemberMap, [workspaceSlug, workspaceMember.member.id], {
+        id: workspaceMember.id,
+        member: workspaceMember.member.id,
+        role: workspaceMember.role,
+        is_active: workspaceMember.is_active,
+      });
+    });
+
+    return response;
+  };
 
   /**
    * @description update the role of a workspace member
@@ -363,4 +400,9 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
     const workspaceMember = this.workspaceMemberMap?.[workspaceSlug]?.[userId];
     return workspaceMember?.is_active === false;
   });
+
+  private isVisibleWorkspaceMember = (userId: string) => {
+    const member = this.memberRoot?.memberMap?.[userId];
+    return !member?.is_bot || member.bot_type === EUserBotType.AI_AGENT;
+  };
 }

@@ -13,6 +13,12 @@ const viteEnv = Object.keys(process.env)
     a[k] = process.env[k] ?? "";
     return a;
   }, {});
+const devServerHost = process.env.PLANE_DEV_SERVER_HOST ?? "127.0.0.1";
+const apiProxy = {
+  target: process.env.PLANE_DEV_API_PROXY_TARGET ?? "http://127.0.0.1:8000",
+  changeOrigin: false,
+  secure: false,
+};
 
 export default defineConfig(() => ({
   define: {
@@ -32,7 +38,11 @@ export default defineConfig(() => ({
     dedupe: ["react", "react-dom", "@headlessui/react"],
   },
   server: {
-    host: "127.0.0.1",
+    host: devServerHost,
+    proxy: {
+      "/api": apiProxy,
+      "/auth": apiProxy,
+    },
   },
   // No SSR-specific overrides needed; alias resolves to ESM build
 }));

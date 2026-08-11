@@ -15,6 +15,7 @@ import { Combobox } from "@headlessui/react";
 import { useTranslation } from "@plane/i18n";
 import { CheckIcon, SearchIcon, SuspendedUserIcon } from "@plane/propel/icons";
 import { EPillSize, EPillVariant, Pill } from "@plane/propel/pill";
+import { EUserBotType } from "@plane/types";
 import type { IUserLite } from "@plane/types";
 import { Avatar } from "@plane/ui";
 import { cn, getFileURL, sortByCurrentUserThenSelected } from "@plane/utils";
@@ -93,9 +94,12 @@ export const MemberOptions = observer(function MemberOptions(props: Props) {
   const options = memberIds
     ?.map((userId) => {
       const userDetails = getUserDetails(userId);
+      const isAIBot = userDetails?.is_bot && userDetails.bot_type === EUserBotType.AI_AGENT;
       return {
         value: userId,
-        query: `${userDetails?.display_name} ${userDetails?.first_name} ${userDetails?.last_name}`,
+        query: `${userDetails?.display_name} ${userDetails?.first_name} ${userDetails?.last_name} ${
+          isAIBot ? "ai bot" : ""
+        }`,
         content: (
           <div className="flex items-center gap-2">
             <div className="w-4">
@@ -105,13 +109,20 @@ export const MemberOptions = observer(function MemberOptions(props: Props) {
                 <Avatar name={userDetails?.display_name} src={getFileURL(userDetails?.avatar_url ?? "")} />
               )}
             </div>
-            <span
-              className={cn(
-                "flex-grow truncate",
-                isUserSuspended(userId, workspaceSlug?.toString()) ? "text-placeholder" : ""
+            <span className="flex min-w-0 flex-grow items-center gap-1.5">
+              <span
+                className={cn(
+                  "truncate",
+                  isUserSuspended(userId, workspaceSlug?.toString()) ? "text-placeholder" : ""
+                )}
+              >
+                {currentUser?.id === userId ? t("you") : userDetails?.display_name}
+              </span>
+              {isAIBot && (
+                <Pill variant={EPillVariant.DEFAULT} size={EPillSize.XS} className="shrink-0 border-none">
+                  AI bot
+                </Pill>
               )}
-            >
-              {currentUser?.id === userId ? t("you") : userDetails?.display_name}
             </span>
           </div>
         ),

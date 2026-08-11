@@ -11,6 +11,7 @@ from .user import UserLiteSerializer, UserAdminLiteSerializer
 
 
 from plane.db.models import (
+    User,
     Workspace,
     WorkspaceMember,
     WorkspaceMemberInvite,
@@ -28,6 +29,7 @@ from plane.db.models import (
 )
 from plane.utils.constants import RESTRICTED_WORKSPACE_SLUGS
 from plane.utils.url import contains_url
+from plane.utils.members import visible_member_q
 from plane.utils.content_validator import (
     validate_html_content,
     validate_binary_data,
@@ -37,6 +39,7 @@ from plane.utils.content_validator import (
 # Django imports
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 import re
 
 
@@ -112,6 +115,33 @@ class WorkspaceMemberAdminSerializer(DynamicBaseSerializer):
     class Meta:
         model = WorkspaceMember
         fields = "__all__"
+
+
+class AIBotMemberCreateSerializer(serializers.Serializer):
+    display_name = serializers.CharField(max_length=255, trim_whitespace=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    token_label = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    expired_at = serializers.DateTimeField(required=False, allow_null=True)
+
+    def validate_display_name(self, value):
+        if contains_url(value):
+            raise serializers.ValidationError("Display name cannot contain a URL.")
+        if not has_alphanumeric(value):
+            raise serializers.ValidationError("Display name must contain at least one letter or number.")
+        return value
+
+    def validate_email(self, value):
+        if not value:
+            return value
+        email = value.lower().strip()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return email
+
+    def validate_expired_at(self, value):
+        if value is not None and value <= timezone.now():
+            raise serializers.ValidationError("Token expiration must be in the future.")
+        return value
 
 
 class WorkSpaceMemberInviteSerializer(BaseSerializer):
@@ -265,7 +295,7 @@ class ProjectRecentVisitSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "logo_props", "project_members", "identifier"]
 
     def get_project_members(self, obj):
-        members = ProjectMember.objects.filter(project_id=obj.id, member__is_bot=False, is_active=True).values_list(
+        members = ProjectMember.objects.filter(visible_member_q(), project_id=obj.id, is_active=True).values_list(
             "member", flat=True
         )
 

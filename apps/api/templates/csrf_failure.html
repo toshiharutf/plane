@@ -59,6 +59,9 @@
           <li>Refresh the page and try submitting the form again.</li>
           <li>Ensure that cookies are enabled in your browser.</li>
         </ul>
+        {% if debug_reason %}
+        <p><strong>Local debug reason:</strong> {{ debug_reason }}</p>
+        {% endif %}
         <a href="{{ root_url }}" class="btn-primary">Go to Home Page</a>
       </div>
     </div>

@@ -7,6 +7,7 @@
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
+import { EUserBotType } from "@plane/types";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 // local imports
@@ -30,17 +31,34 @@ export const MemberDropdown = observer(function MemberDropdown(props: TMemberDro
   const {
     getUserDetails,
     project: { getProjectMemberIds, fetchProjectMembers },
-    workspace: { workspaceMemberIds },
+    workspace: { workspaceMemberIds, fetchWorkspaceMembers },
   } = useMember();
+
+  const projectMemberIds = projectId ? getProjectMemberIds(projectId, false) : null;
+  const projectMemberIdSet = new Set(projectMemberIds ?? []);
+  const workspaceAIBotMemberIds =
+    projectId && !propsMemberIds && projectMemberIds
+      ? (workspaceMemberIds ?? []).filter((userId) => {
+          const userDetails = getUserDetails(userId);
+          return (
+            userDetails?.is_bot &&
+            userDetails.bot_type === EUserBotType.AI_AGENT &&
+            !projectMemberIdSet.has(userId)
+          );
+        })
+      : [];
 
   const memberIds = propsMemberIds
     ? propsMemberIds
     : projectId
-      ? getProjectMemberIds(projectId, false)
+      ? projectMemberIds
+        ? [...projectMemberIds, ...workspaceAIBotMemberIds]
+        : null
       : workspaceMemberIds;
 
   const onDropdownOpen = () => {
-    if (!memberIds && projectId && workspaceSlug) fetchProjectMembers(workspaceSlug.toString(), projectId);
+    if (!projectMemberIds && projectId && workspaceSlug) fetchProjectMembers(workspaceSlug.toString(), projectId);
+    if (!workspaceMemberIds && workspaceSlug) fetchWorkspaceMembers(workspaceSlug.toString());
   };
 
   return (

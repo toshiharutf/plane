@@ -9,18 +9,16 @@ import { useSearchParams } from "next/navigation";
 // icons
 import { Eye, EyeOff } from "lucide-react";
 // plane internal packages
-import { API_BASE_URL, E_PASSWORD_STRENGTH } from "@plane/constants";
+import { E_PASSWORD_STRENGTH } from "@plane/constants";
 import { Button } from "@plane/propel/button";
 import { AuthService } from "@plane/services";
 import { Checkbox, Input, PasswordStrengthIndicator, Spinner } from "@plane/ui";
 import { getPasswordStrength, validatePersonName, validateCompanyName } from "@plane/utils";
 // components
 import { AuthHeader } from "@/app/(all)/(home)/auth-header";
+import { getBrowserAlignedApiBaseUrl } from "@/helpers/api-base-url";
 import { Banner } from "../common/banner";
 import { FormHeader } from "./form-header";
-
-// service initialization
-const authService = new AuthService();
 
 // error codes
 enum EErrorCodes {
@@ -77,6 +75,8 @@ export function InstanceSetupForm() {
   const [isPasswordInputFocused, setIsPasswordInputFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetryPasswordInputFocused, setIsRetryPasswordInputFocused] = useState(false);
+  const apiBaseUrl = useMemo(() => getBrowserAlignedApiBaseUrl(), []);
+  const authService = useMemo(() => new AuthService(apiBaseUrl), [apiBaseUrl]);
 
   const handleShowPassword = (key: keyof typeof showPassword) =>
     setShowPassword((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -122,6 +122,7 @@ export function InstanceSetupForm() {
   const isButtonDisabled = useMemo(
     () =>
       !isSubmitting &&
+      csrfToken &&
       formData.first_name &&
       formData.email &&
       formData.password &&
@@ -129,7 +130,7 @@ export function InstanceSetupForm() {
       formData.password === formData.confirm_password
         ? false
         : true,
-    [formData.confirm_password, formData.email, formData.first_name, formData.password, isSubmitting]
+    [csrfToken, formData.confirm_password, formData.email, formData.first_name, formData.password, isSubmitting]
   );
 
   const password = formData?.password ?? "";
@@ -153,11 +154,11 @@ export function InstanceSetupForm() {
           <form
             className="space-y-4"
             method="POST"
-            action={`${API_BASE_URL}/api/instances/admins/sign-up/`}
+            action={`${apiBaseUrl}/api/instances/admins/sign-up/`}
             onSubmit={() => setIsSubmitting(true)}
             onError={() => setIsSubmitting(false)}
           >
-            <input type="hidden" name="csrfmiddlewaretoken" value={csrfToken} />
+            <input type="hidden" name="csrfmiddlewaretoken" value={csrfToken ?? ""} />
             <input type="hidden" name="is_telemetry_enabled" value={formData.is_telemetry_enabled ? "True" : "False"} />
 
             <div className="flex flex-col items-center gap-4 sm:flex-row">

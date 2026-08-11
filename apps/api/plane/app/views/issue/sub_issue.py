@@ -27,6 +27,7 @@ from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.timezone_converter import user_timezone_converter
 from collections import defaultdict
 from plane.utils.host import base_host
+from plane.utils.members import active_issue_assignee_q
 from plane.utils.order_queryset import order_issue_queryset
 
 
@@ -98,11 +99,8 @@ class SubIssuesEndpoint(BaseAPIView):
                 ),
                 assignee_ids=Coalesce(
                     Subquery(
-                        IssueAssignee.objects.filter(
-                            issue_id=OuterRef("id"),
-                            assignee__member_project__is_active=True,
-                            deleted_at__isnull=True,
-                        )
+                        IssueAssignee.objects.filter(issue_id=OuterRef("id"), deleted_at__isnull=True)
+                        .filter(active_issue_assignee_q())
                         .order_by()
                         .values("issue_id")
                         .annotate(arr=ArrayAgg("assignee_id", distinct=True))

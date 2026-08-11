@@ -1,0 +1,44 @@
+services:
+  web:
+    image: node:22-bookworm
+    working_dir: /repo
+    user: "${PLANE_LOCAL_UID:-1000}:${PLANE_LOCAL_GID:-1000}"
+    networks:
+      - dev_env
+    volumes:
+      - .:/repo
+    environment:
+      HOME: /tmp
+      PNPM_HOME: /tmp/plane-pnpm
+      COREPACK_HOME: /tmp/plane-corepack
+      PLANE_DEV_SERVER_HOST: 0.0.0.0
+      PLANE_DEV_API_PROXY_TARGET: http://api:8000
+    command: >
+      bash -lc "corepack prepare pnpm@11.3.0 --activate &&
+      corepack pnpm --filter web dev --host 0.0.0.0"
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+  admin:
+    image: node:22-bookworm
+    working_dir: /repo
+    user: "${PLANE_LOCAL_UID:-1000}:${PLANE_LOCAL_GID:-1000}"
+    networks:
+      - dev_env
+    volumes:
+      - .:/repo
+    environment:
+      HOME: /tmp
+      PNPM_HOME: /tmp/plane-pnpm
+      COREPACK_HOME: /tmp/plane-corepack
+      PLANE_DEV_SERVER_HOST: 0.0.0.0
+      PLANE_DEV_API_PROXY_TARGET: http://api:8000
+    command: >
+      bash -lc "corepack prepare pnpm@11.3.0 --activate &&
+      corepack pnpm --filter admin dev --host 0.0.0.0"
+    depends_on:
+      - api
+    ports:
+      - "3001:3001"

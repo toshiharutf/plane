@@ -68,6 +68,7 @@ from plane.db.models import (
 )
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.issue_filters import issue_filters
+from plane.utils.members import active_assignee_q
 
 
 class ProjectIssuesPublicEndpoint(BaseAPIView):
@@ -625,7 +626,7 @@ class IssueRetrievePublicEndpoint(BaseAPIView):
                         distinct=True,
                         filter=Q(
                             ~Q(assignees__id__isnull=True)
-                            & Q(assignees__member_project__is_active=True)
+                            & active_assignee_q()
                             & Q(issue_assignee__deleted_at__isnull=True)
                         ),
                     ),

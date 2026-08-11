@@ -30,6 +30,7 @@ from plane.bgtasks.issue_activities_task import issue_activity
 from plane.db.models import Intake, IntakeIssue, Issue, Project, ProjectMember, State, StateGroup
 from plane.utils.host import base_host
 from plane.utils.content_validator import validate_html_content
+from plane.utils.members import active_assignee_q
 from .base import BaseAPIView
 from plane.db.models.intake import SourceType
 from plane.utils.openapi import (
@@ -367,7 +368,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
                         distinct=True,
                         filter=Q(
                             ~Q(assignees__id__isnull=True)
-                            & Q(assignees__member_project__is_active=True)
+                            & active_assignee_q()
                             & Q(issue_assignee__deleted_at__isnull=True)
                         ),
                     ),

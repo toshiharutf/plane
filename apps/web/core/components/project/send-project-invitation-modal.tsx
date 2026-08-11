@@ -73,8 +73,9 @@ export const SendProjectInvitationModal = observer(function SendProjectInvitatio
   const currentProjectRole = getProjectRoleByWorkspaceSlugAndProjectId(workspaceSlug, projectId);
   const uninvitedPeople = workspaceMemberIds?.filter((userId) => {
     const projectMemberDetails = getProjectMemberDetails(userId, projectId);
+    const workspaceMemberDetails = getWorkspaceMemberDetails(userId);
     const isInvited = projectMemberDetails?.member.id && projectMemberDetails?.original_role;
-    return !isInvited;
+    return !isInvited && !workspaceMemberDetails?.member?.is_bot;
   });
 
   const onSubmit = async (formData: FormValues) => {
@@ -198,12 +199,12 @@ export const SendProjectInvitationModal = observer(function SendProjectInvitatio
                           customButton={
                             <button className="shadow-sm flex w-full items-center justify-between gap-1 rounded-md border border-subtle px-3 py-2 text-left text-13 text-secondary duration-300 hover:bg-layer-1 hover:text-primary focus:outline-none">
                               {value && value !== "" ? (
-                                <div className="flex items-center gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
                                   <Avatar
                                     name={selectedMember?.member.display_name}
                                     src={getFileURL(selectedMember?.member.avatar_url ?? "")}
                                   />
-                                  {selectedMember?.member.display_name}
+                                  <span className="truncate">{selectedMember?.member.display_name}</span>
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-2 py-0.5">Select co-worker</div>
