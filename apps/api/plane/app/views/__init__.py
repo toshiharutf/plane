@@ -54,6 +54,8 @@ from .workspace.favorite import (
 from .workspace.recent_visit import UserRecentVisitViewSet
 from .workspace.user_preference import WorkspaceUserPreferenceViewSet
 
+from .workspace.ai_status import WorkspaceAIStatusEndpoint
+
 from .workspace.member import (
     WorkSpaceMemberViewSet,
     WorkspaceAIBotMemberEndpoint,
