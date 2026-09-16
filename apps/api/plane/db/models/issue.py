@@ -330,7 +330,9 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
                 from plane.db.models import State
 
                 previous_group = (
-                    State.all_state_objects.filter(pk=self.old_values["state_id"]).values_list("group", flat=True).first()
+                    State.all_state_objects.filter(pk=self.old_values["state_id"])
+                    .values_list("group", flat=True)
+                    .first()
                 )
             now = timezone.now().replace(microsecond=0)
             group = self.state.group
