@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Đi trước các yếu tố chặn.",
   "stay_ahead_of_blockers_description": "Phát hiện thách thức từ dự án này sang dự án khác và xem các phụ thuộc giữa các chu kỳ không dễ thấy từ các chế độ xem khác.",
   "analytics": "Phân tích",
+  "ai_status": "Trạng thái AI",
+  "ai_status_page": {
+    "error": "Trạng thái AI không khả dụng. Chỉ quản trị viên và thành viên của không gian làm việc mới xem được.",
+    "in_progress": {
+      "title": "Đang thực hiện",
+      "description": "Các mục công việc đang thực hiện và được giao cho bot AI.",
+      "empty": "Hiện không có bot AI nào đang xử lý mục công việc.",
+      "work_item": "Mục công việc",
+      "bots": "Bot AI",
+      "state": "Trạng thái",
+      "started": "Bắt đầu",
+      "elapsed": "Đã trôi qua"
+    },
+    "histogram": {
+      "title": "Thời gian hoàn thành",
+      "description": "Số phút từ lần chuyển gần nhất sang trạng thái đang thực hiện đến khi hoàn thành, cho các mục công việc do bot AI hoàn thành trong {days} ngày qua.",
+      "empty": "Không có mục công việc nào do bot AI hoàn thành trong khoảng thời gian này.",
+      "completed": "Đã hoàn thành",
+      "median": "Trung vị",
+      "mean": "Trung bình",
+      "bin_width": "Độ rộng khoảng",
+      "duration": "Thời lượng",
+      "work_items": "Mục công việc"
+    }
+  },
   "workspace_invites": "Lời mời không gian làm việc",
   "enter_god_mode": "Vào chế độ quản trị viên",
   "workspace_logo": "Logo không gian làm việc",

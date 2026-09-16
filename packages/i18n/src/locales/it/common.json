@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Anticipa gli ostacoli.",
   "stay_ahead_of_blockers_description": "Individua le sfide tra i progetti e visualizza le dipendenze inter-cicliche non evidenti in altre viste.",
   "analytics": "Analisi",
+  "ai_status": "Stato dell’IA",
+  "ai_status_page": {
+    "error": "Lo stato dell’IA non è disponibile. Solo gli amministratori e i membri del workspace possono visualizzarlo.",
+    "in_progress": {
+      "title": "In corso",
+      "description": "Elementi di lavoro in corso assegnati ai bot IA.",
+      "empty": "Al momento nessun bot IA sta lavorando su un elemento di lavoro.",
+      "work_item": "Elemento di lavoro",
+      "bots": "Bot IA",
+      "state": "Stato",
+      "started": "Avviato",
+      "elapsed": "Trascorso"
+    },
+    "histogram": {
+      "title": "Tempo di completamento",
+      "description": "Minuti dall’ultimo passaggio a uno stato in corso fino al completamento, per gli elementi di lavoro completati dai bot IA negli ultimi {days} giorni.",
+      "empty": "Nessun elemento di lavoro completato dai bot IA in questo periodo.",
+      "completed": "Completati",
+      "median": "Mediana",
+      "mean": "Media",
+      "bin_width": "Ampiezza degli intervalli",
+      "duration": "Durata",
+      "work_items": "Elementi di lavoro"
+    }
+  },
   "workspace_invites": "Inviti allo spazio di lavoro",
   "enter_god_mode": "Entra in modalità dio",
   "workspace_logo": "Logo dello spazio di lavoro",

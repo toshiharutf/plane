@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Erkennen Sie frühzeitig Blocker.",
   "stay_ahead_of_blockers_description": "Identifizieren Sie projektübergreifende Probleme und erkennen Sie Abhängigkeiten zwischen Zyklen, die sonst nicht offensichtlich wären.",
   "analytics": "Analysen",
+  "ai_status": "KI-Status",
+  "ai_status_page": {
+    "error": "Der KI-Status ist nicht verfügbar. Nur Admins und Mitglieder des Workspace können ihn sehen.",
+    "in_progress": {
+      "title": "In Bearbeitung",
+      "description": "Arbeitselemente, die gerade in Bearbeitung sind und KI-Bots zugewiesen sind.",
+      "empty": "Derzeit arbeitet kein KI-Bot an einem Arbeitselement.",
+      "work_item": "Arbeitselement",
+      "bots": "KI-Bots",
+      "state": "Status",
+      "started": "Gestartet",
+      "elapsed": "Vergangen"
+    },
+    "histogram": {
+      "title": "Bearbeitungsdauer",
+      "description": "Minuten vom letzten Wechsel in einen „In Bearbeitung“-Status bis zum Abschluss, für Arbeitselemente, die KI-Bots in den letzten {days} Tagen abgeschlossen haben.",
+      "empty": "In diesem Zeitraum haben KI-Bots kein Arbeitselement abgeschlossen.",
+      "completed": "Abgeschlossen",
+      "median": "Median",
+      "mean": "Mittelwert",
+      "bin_width": "Intervallbreite",
+      "duration": "Dauer",
+      "work_items": "Arbeitselemente"
+    }
+  },
   "workspace_invites": "Einladungen zum Arbeitsbereich",
   "enter_god_mode": "God-Mode betreten",
   "workspace_logo": "Arbeitsbereichslogo",

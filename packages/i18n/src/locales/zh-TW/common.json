@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "預防阻礙。",
   "stay_ahead_of_blockers_description": "發現跨專案的挑戰，並檢視其他檢視無法明顯看出的週期間相依性。",
   "analytics": "分析",
+  "ai_status": "AI 狀態",
+  "ai_status_page": {
+    "error": "AI 狀態無法使用。只有工作區管理員和成員可以檢視。",
+    "in_progress": {
+      "title": "進行中",
+      "description": "目前進行中且指派給 AI 機器人的工作事項。",
+      "empty": "目前沒有 AI 機器人在處理工作事項。",
+      "work_item": "工作事項",
+      "bots": "AI 機器人",
+      "state": "狀態",
+      "started": "開始時間",
+      "elapsed": "已用時間"
+    },
+    "histogram": {
+      "title": "完成用時",
+      "description": "過去 {days} 天內由 AI 機器人完成的工作事項，從最後一次進入進行中狀態到完成所用的分鐘數。",
+      "empty": "此期間內 AI 機器人未完成任何工作事項。",
+      "completed": "已完成",
+      "median": "中位數",
+      "mean": "平均值",
+      "bin_width": "區間寬度",
+      "duration": "用時",
+      "work_items": "工作事項"
+    }
+  },
   "workspace_invites": "工作區邀請",
   "enter_god_mode": "進入管理員模式",
   "workspace_logo": "工作區標誌",

@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "ブロッカーに先手を打つ",
   "stay_ahead_of_blockers_description": "プロジェクト間の課題を特定し、他のビューでは明らかでないサイクル間の依存関係を確認します。",
   "analytics": "アナリティクス",
+  "ai_status": "AI ステータス",
+  "ai_status_page": {
+    "error": "AI ステータスは利用できません。ワークスペースの管理者とメンバーのみが表示できます。",
+    "in_progress": {
+      "title": "進行中",
+      "description": "AI ボットに割り当てられ、現在進行中の作業項目です。",
+      "empty": "現在、作業項目に取り組んでいる AI ボットはありません。",
+      "work_item": "作業項目",
+      "bots": "AI ボット",
+      "state": "ステータス",
+      "started": "開始日時",
+      "elapsed": "経過時間"
+    },
+    "histogram": {
+      "title": "完了までの時間",
+      "description": "過去 {days} 日間に AI ボットが完了した作業項目について、最後に進行中のステータスへ移動してから完了するまでの時間（分）です。",
+      "empty": "この期間に AI ボットが完了した作業項目はありません。",
+      "completed": "完了",
+      "median": "中央値",
+      "mean": "平均",
+      "bin_width": "区間幅",
+      "duration": "所要時間",
+      "work_items": "作業項目"
+    }
+  },
   "workspace_invites": "ワークスペースの招待",
   "enter_god_mode": "ゴッドモードに入る",
   "workspace_logo": "ワークスペースのロゴ",

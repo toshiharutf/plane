@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Tetap di depan penghambat.",
   "stay_ahead_of_blockers_description": "Identifikasi tantangan dari satu proyek ke proyek lainnya dan lihat ketergantungan antar siklus yang tidak terlihat dari tampilan lain mana pun.",
   "analytics": "Analitik",
+  "ai_status": "Status AI",
+  "ai_status_page": {
+    "error": "Status AI tidak tersedia. Hanya admin dan anggota workspace yang dapat melihatnya.",
+    "in_progress": {
+      "title": "Sedang berjalan",
+      "description": "Item kerja yang sedang berjalan dan ditugaskan ke bot AI.",
+      "empty": "Saat ini tidak ada bot AI yang mengerjakan item kerja.",
+      "work_item": "Item kerja",
+      "bots": "Bot AI",
+      "state": "Status",
+      "started": "Dimulai",
+      "elapsed": "Berlalu"
+    },
+    "histogram": {
+      "title": "Waktu penyelesaian",
+      "description": "Menit sejak perpindahan terakhir ke status sedang berjalan hingga selesai, untuk item kerja yang diselesaikan bot AI dalam {days} hari terakhir.",
+      "empty": "Tidak ada item kerja yang diselesaikan bot AI dalam periode ini.",
+      "completed": "Selesai",
+      "median": "Median",
+      "mean": "Rata-rata",
+      "bin_width": "Lebar interval",
+      "duration": "Durasi",
+      "work_items": "Item kerja"
+    }
+  },
   "workspace_invites": "Undangan ruang kerja",
   "enter_god_mode": "Masuk ke mode dewa",
   "workspace_logo": "Logo ruang kerja",

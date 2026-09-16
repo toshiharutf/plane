@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Engellerin önüne geçin",
   "stay_ahead_of_blockers_description": "Projeler arası zorlukları ve diğer görünümlerde belirgin olmayan döngü bağımlılıklarını tespit edin.",
   "analytics": "Analitik",
+  "ai_status": "Yapay zekâ durumu",
+  "ai_status_page": {
+    "error": "Yapay zekâ durumu kullanılamıyor. Yalnızca çalışma alanı yöneticileri ve üyeleri görebilir.",
+    "in_progress": {
+      "title": "Devam ediyor",
+      "description": "Yapay zekâ botlarına atanmış ve devam eden iş öğeleri.",
+      "empty": "Şu anda hiçbir yapay zekâ botu bir iş öğesi üzerinde çalışmıyor.",
+      "work_item": "İş öğesi",
+      "bots": "Yapay zekâ botları",
+      "state": "Durum",
+      "started": "Başlangıç",
+      "elapsed": "Geçen süre"
+    },
+    "histogram": {
+      "title": "Tamamlama süresi",
+      "description": "Son {days} günde yapay zekâ botlarının tamamladığı iş öğeleri için, devam eden bir duruma son geçişten tamamlanmaya kadar geçen dakika.",
+      "empty": "Bu dönemde yapay zekâ botları hiçbir iş öğesini tamamlamadı.",
+      "completed": "Tamamlanan",
+      "median": "Medyan",
+      "mean": "Ortalama",
+      "bin_width": "Aralık genişliği",
+      "duration": "Süre",
+      "work_items": "İş öğeleri"
+    }
+  },
   "workspace_invites": "Çalışma Alanı Davetleri",
   "enter_god_mode": "Yönetici Moduna Geç",
   "workspace_logo": "Çalışma Alanı Logosu",

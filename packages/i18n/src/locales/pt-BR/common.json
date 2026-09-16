@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Fique à frente dos bloqueios.",
   "stay_ahead_of_blockers_description": "Identifique desafios de um projeto para outro e veja as dependências entre ciclos que não são óbvias em nenhuma outra visualização.",
   "analytics": "Análises",
+  "ai_status": "Status da IA",
+  "ai_status_page": {
+    "error": "O status da IA não está disponível. Somente administradores e membros do workspace podem vê-lo.",
+    "in_progress": {
+      "title": "Em andamento",
+      "description": "Itens de trabalho em andamento atribuídos a bots de IA.",
+      "empty": "Nenhum bot de IA está trabalhando em um item de trabalho no momento.",
+      "work_item": "Item de trabalho",
+      "bots": "Bots de IA",
+      "state": "Estado",
+      "started": "Iniciado",
+      "elapsed": "Decorrido"
+    },
+    "histogram": {
+      "title": "Tempo até a conclusão",
+      "description": "Minutos desde a última mudança para um estado em andamento até a conclusão, para itens de trabalho concluídos por bots de IA nos últimos {days} dias.",
+      "empty": "Nenhum item de trabalho foi concluído por bots de IA neste período.",
+      "completed": "Concluídos",
+      "median": "Mediana",
+      "mean": "Média",
+      "bin_width": "Largura do intervalo",
+      "duration": "Duração",
+      "work_items": "Itens de trabalho"
+    }
+  },
   "workspace_invites": "Convites para o espaço de trabalho",
   "enter_god_mode": "Entrar no God Mode",
   "workspace_logo": "Logo do espaço de trabalho",

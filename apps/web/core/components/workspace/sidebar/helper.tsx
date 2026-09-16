@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { Bot } from "lucide-react";
 import {
   AnalyticsIcon,
   ArchiveIcon,
@@ -26,6 +27,8 @@ export const getSidebarNavigationItemIcon = (key: string, className: string = ""
       return <InboxIcon className={cn("size-4 flex-shrink-0", className)} />;
     case "projects":
       return <ProjectIcon className={cn("size-4 flex-shrink-0", className)} />;
+    case "ai_status":
+      return <Bot className={cn("size-4 flex-shrink-0", className)} />;
     case "views":
       return <ViewsIcon className={cn("size-4 flex-shrink-0", className)} />;
     case "active_cycles":

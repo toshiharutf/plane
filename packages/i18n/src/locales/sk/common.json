@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Buďte o krok pred prekážkami.",
   "stay_ahead_of_blockers_description": "Identifikujte problémy medzi projektmi a zistite závislosti medzi cyklami, ktoré nie sú z iných pohľadov zrejmé.",
   "analytics": "Analytika",
+  "ai_status": "Stav AI",
+  "ai_status_page": {
+    "error": "Stav AI nie je k dispozícii. Môžu ho zobraziť iba správcovia a členovia pracovného priestoru.",
+    "in_progress": {
+      "title": "Prebieha",
+      "description": "Pracovné položky, ktoré práve prebiehajú a sú priradené AI botom.",
+      "empty": "Žiadny AI bot teraz na pracovnej položke nepracuje.",
+      "work_item": "Pracovná položka",
+      "bots": "AI boti",
+      "state": "Stav",
+      "started": "Začaté",
+      "elapsed": "Uplynulo"
+    },
+    "histogram": {
+      "title": "Čas dokončenia",
+      "description": "Minúty od posledného presunu do stavu „prebieha“ po dokončenie pri pracovných položkách dokončených AI botmi za posledných {days} dní.",
+      "empty": "V tomto období AI boti nedokončili žiadnu pracovnú položku.",
+      "completed": "Dokončené",
+      "median": "Medián",
+      "mean": "Priemer",
+      "bin_width": "Šírka intervalu",
+      "duration": "Trvanie",
+      "work_items": "Pracovné položky"
+    }
+  },
   "workspace_invites": "Pozvánky do pracovného priestoru",
   "enter_god_mode": "Vstúpiť do božského režimu",
   "workspace_logo": "Logo pracovného priestoru",

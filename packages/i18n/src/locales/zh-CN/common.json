@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "提前预防阻塞。",
   "stay_ahead_of_blockers_description": "发现从一个项目到另一个项目的挑战，并查看从其他视图中不易发现的周期间依赖关系。",
   "analytics": "分析",
+  "ai_status": "AI 状态",
+  "ai_status_page": {
+    "error": "AI 状态不可用。只有工作区管理员和成员可以查看。",
+    "in_progress": {
+      "title": "进行中",
+      "description": "当前进行中且分配给 AI 机器人的工作项。",
+      "empty": "目前没有 AI 机器人在处理工作项。",
+      "work_item": "工作项",
+      "bots": "AI 机器人",
+      "state": "状态",
+      "started": "开始时间",
+      "elapsed": "已用时间"
+    },
+    "histogram": {
+      "title": "完成用时",
+      "description": "过去 {days} 天内由 AI 机器人完成的工作项，从最后一次进入进行中状态到完成所用的分钟数。",
+      "empty": "此期间内 AI 机器人未完成任何工作项。",
+      "completed": "已完成",
+      "median": "中位数",
+      "mean": "平均值",
+      "bin_width": "区间宽度",
+      "duration": "用时",
+      "work_items": "工作项"
+    }
+  },
   "workspace_invites": "工作区邀请",
   "enter_god_mode": "进入管理员模式",
   "workspace_logo": "工作区标志",
