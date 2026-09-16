@@ -133,6 +133,13 @@ class IssueCreateSerializer(BaseSerializer):
         ):
             raise serializers.ValidationError("Start date cannot exceed target date")
 
+        if (
+            attrs.get("start_datetime", None) is not None
+            and attrs.get("target_datetime", None) is not None
+            and attrs.get("start_datetime", None) > attrs.get("target_datetime", None)
+        ):
+            raise serializers.ValidationError("Start date cannot exceed target date")
+
         # Validate description content for security
         if "description_html" in attrs and attrs["description_html"]:
             is_valid, error_msg, sanitized_html = validate_html_content(attrs["description_html"])
@@ -793,6 +800,8 @@ class IssueSerializer(DynamicBaseSerializer):
             "priority",
             "start_date",
             "target_date",
+            "start_datetime",
+            "target_datetime",
             "sequence_id",
             "project_id",
             "parent_id",
@@ -850,6 +859,8 @@ class IssueListDetailSerializer(serializers.Serializer):
             "priority": instance.priority,
             "start_date": instance.start_date,
             "target_date": instance.target_date,
+            "start_datetime": instance.start_datetime,
+            "target_datetime": instance.target_datetime,
             "sequence_id": instance.sequence_id,
             "project_id": instance.project_id,
             "parent_id": instance.parent_id,

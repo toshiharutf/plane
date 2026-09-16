@@ -183,6 +183,8 @@ class IssueListEndpoint(BaseAPIView):
                 "priority",
                 "start_date",
                 "target_date",
+                "start_datetime",
+                "target_datetime",
                 "sequence_id",
                 "project_id",
                 "parent_id",
@@ -448,6 +450,8 @@ class IssueViewSet(BaseViewSet):
                     "priority",
                     "start_date",
                     "target_date",
+                    "start_datetime",
+                    "target_datetime",
                     "sequence_id",
                     "project_id",
                     "parent_id",
@@ -878,6 +882,8 @@ class IssuePaginatedViewSet(BaseViewSet):
             "priority",
             "start_date",
             "target_date",
+            "start_datetime",
+            "target_datetime",
             "sequence_id",
             "project_id",
             "parent_id",
@@ -1174,8 +1180,13 @@ class IssueBulkUpdateDateEndpoint(BaseAPIView):
                 issue.target_date = target_date
                 issues_to_update.append(issue)
 
-        # Bulk update issues
-        Issue.objects.bulk_update(issues_to_update, ["start_date", "target_date"])
+        # Bulk update issues, keeping the start/target datetimes on the new dates
+        for issue in issues_to_update:
+            issue.sync_start_target_datetimes()
+        Issue.objects.bulk_update(
+            issues_to_update,
+            ["start_date", "target_date", "start_datetime", "target_datetime"],
+        )
 
         return Response({"message": "Issues updated successfully"}, status=status.HTTP_200_OK)
 

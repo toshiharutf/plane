@@ -81,6 +81,13 @@ class IssueSerializer(BaseSerializer):
         ):
             raise serializers.ValidationError("Start date cannot exceed target date")
 
+        if (
+            data.get("start_datetime", None) is not None
+            and data.get("target_datetime", None) is not None
+            and data.get("start_datetime", None) > data.get("target_datetime", None)
+        ):
+            raise serializers.ValidationError("Start date cannot exceed target date")
+
         try:
             if data.get("description_html", None) is not None:
                 parsed = html.fromstring(data["description_html"])

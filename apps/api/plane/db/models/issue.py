@@ -3,7 +3,9 @@
 # See the LICENSE file for details.
 
 # Python import
+from datetime import datetime, time
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 # Django imports
 from django.conf import settings
@@ -12,6 +14,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction, connection
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 from django.db.models import Q
 from django import apps
 
@@ -102,7 +105,7 @@ class IssueManager(SoftDeletionManager):
 
 
 class Issue(ChangeTrackerMixin, ProjectBaseModel):
-    TRACKED_FIELDS = ["state_id"]
+    TRACKED_FIELDS = ["state_id", "start_date", "target_date", "start_datetime", "target_datetime"]
 
     PRIORITY_CHOICES = (
         ("urgent", "Urgent"),
@@ -146,6 +149,9 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
     )
     start_date = models.DateField(null=True, blank=True)
     target_date = models.DateField(null=True, blank=True)
+    # Precise start/end moments (UTC); start_date/target_date mirror their local date
+    start_datetime = models.DateTimeField(null=True, blank=True)
+    target_datetime = models.DateTimeField(null=True, blank=True)
     assignees = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
@@ -180,6 +186,7 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
     def save(self, *args, **kwargs):
         self._ensure_default_state()
         kwargs = self._sync_completed_at(kwargs)
+        kwargs = self._sync_start_target(kwargs)
 
         if self._state.adding:
             with transaction.atomic():
@@ -252,6 +259,105 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:
             kwargs["update_fields"] = list(set(update_fields) | {"completed_at"})
+        return kwargs
+
+    def _project_timezone(self):
+        try:
+            return ZoneInfo(self.project.timezone or "UTC")
+        except Exception:
+            return ZoneInfo("UTC")
+
+    def _field_changed(self, field_name):
+        if self._state.adding:
+            return getattr(self, field_name) is not None
+        return self.has_changed(field_name)
+
+    def sync_start_target_datetimes(self):
+        """Keep start/target dates and datetimes consistent. Returns the changed field names."""
+        changed = set()
+        tz = None
+        for date_field, datetime_field in (
+            ("start_date", "start_datetime"),
+            ("target_date", "target_datetime"),
+        ):
+            date_value = getattr(self, date_field)
+            if isinstance(date_value, str):
+                date_value = parse_date(date_value)
+                setattr(self, date_field, date_value)
+            datetime_value = getattr(self, datetime_field)
+            if isinstance(datetime_value, str):
+                datetime_value = parse_datetime(datetime_value)
+                setattr(self, datetime_field, datetime_value)
+            if isinstance(datetime_value, datetime) and timezone.is_naive(datetime_value):
+                datetime_value = timezone.make_aware(datetime_value, ZoneInfo("UTC"))
+                setattr(self, datetime_field, datetime_value)
+
+            if self._field_changed(datetime_field):
+                tz = tz or self._project_timezone()
+                new_date = datetime_value.astimezone(tz).date() if datetime_value else None
+                if date_value != new_date:
+                    setattr(self, date_field, new_date)
+                    changed.add(date_field)
+            elif self._field_changed(date_field) or (date_value is None) != (datetime_value is None):
+                if date_value is None:
+                    if datetime_value is not None:
+                        setattr(self, datetime_field, None)
+                        changed.add(datetime_field)
+                    continue
+                tz = tz or self._project_timezone()
+                local_value = datetime_value.astimezone(tz) if datetime_value else None
+                if local_value is None or local_value.date() != date_value:
+                    time_of_day = local_value.time().replace(tzinfo=None) if local_value else time(0, 0)
+                    setattr(self, datetime_field, datetime.combine(date_value, time_of_day, tzinfo=tz))
+                    changed.add(datetime_field)
+        return changed
+
+    def _set_moment(self, date_field, datetime_field, value):
+        setattr(self, datetime_field, value)
+        setattr(
+            self,
+            date_field,
+            value.astimezone(self._project_timezone()).date() if value else None,
+        )
+
+    def _sync_start_target(self, kwargs):
+        """Auto-fill start/target datetimes on state group transitions and sync dates. Returns kwargs."""
+        changed = self.sync_start_target_datetimes()
+
+        if self.state and (self._state.adding or self.has_changed("state_id")):
+            previous_group = None
+            if not self._state.adding and self.old_values.get("state_id"):
+                from plane.db.models import State
+
+                previous_group = (
+                    State.all_state_objects.filter(pk=self.old_values["state_id"]).values_list("group", flat=True).first()
+                )
+            now = timezone.now().replace(microsecond=0)
+            group = self.state.group
+
+            if group == StateGroup.STARTED.value and previous_group != StateGroup.STARTED.value:
+                # An explicit value sent together with the state change (or on create) wins
+                if not self._field_changed("start_datetime"):
+                    self._set_moment("start_date", "start_datetime", now)
+                    changed |= {"start_date", "start_datetime"}
+                    if (self.target_datetime and self.target_datetime < now) or (
+                        self.target_date and self.target_date < self.start_date
+                    ):
+                        self._set_moment("target_date", "target_datetime", None)
+                        changed |= {"target_date", "target_datetime"}
+            elif group == StateGroup.COMPLETED.value and previous_group != StateGroup.COMPLETED.value:
+                if not self._field_changed("target_datetime"):
+                    self._set_moment("target_date", "target_datetime", now)
+                    changed |= {"target_date", "target_datetime"}
+                    if (self.start_datetime and self.start_datetime > now) or (
+                        self.start_date and self.start_date > self.target_date
+                    ):
+                        self._set_moment("start_date", "start_datetime", None)
+                        changed |= {"start_date", "start_datetime"}
+
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and changed:
+            kwargs["update_fields"] = list(set(update_fields) | changed)
         return kwargs
 
 
