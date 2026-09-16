@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Wyprzedzaj blokery.",
   "stay_ahead_of_blockers_description": "Identyfikuj problemy między projektami i odkrywaj zależności między cyklami, niewidoczne w innych widokach.",
   "analytics": "Analizy",
+  "ai_status": "Status AI",
+  "ai_status_page": {
+    "error": "Status AI jest niedostępny. Mogą go wyświetlać tylko administratorzy i członkowie obszaru roboczego.",
+    "in_progress": {
+      "title": "W toku",
+      "description": "Elementy pracy, które są w toku i są przypisane do botów AI.",
+      "empty": "Żaden bot AI nie pracuje obecnie nad elementem pracy.",
+      "work_item": "Element pracy",
+      "bots": "Boty AI",
+      "state": "Stan",
+      "started": "Rozpoczęto",
+      "elapsed": "Upłynęło"
+    },
+    "histogram": {
+      "title": "Czas realizacji",
+      "description": "Minuty od ostatniego przejścia do stanu „w toku” do ukończenia, dla elementów pracy ukończonych przez boty AI w ciągu ostatnich {days} dni.",
+      "empty": "W tym okresie boty AI nie ukończyły żadnego elementu pracy.",
+      "completed": "Ukończone",
+      "median": "Mediana",
+      "mean": "Średnia",
+      "bin_width": "Szerokość przedziału",
+      "duration": "Czas trwania",
+      "work_items": "Elementy pracy"
+    }
+  },
   "workspace_invites": "Zaproszenia do przestrzeni roboczej",
   "enter_god_mode": "Wejdź w tryb boga",
   "workspace_logo": "Logo przestrzeni roboczej",

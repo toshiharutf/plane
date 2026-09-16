@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Stay ahead of blockers.",
   "stay_ahead_of_blockers_description": "Spot challenges from one project to another and see inter-cycle dependencies that aren't obvious from any other view.",
   "analytics": "Analytics",
+  "ai_status": "AI status",
+  "ai_status_page": {
+    "error": "AI status is not available. Only workspace admins and members can see it.",
+    "in_progress": {
+      "title": "In progress",
+      "description": "Work items currently in progress and assigned to AI bots.",
+      "empty": "No AI bot is working on a work item right now.",
+      "work_item": "Work item",
+      "bots": "AI bots",
+      "state": "State",
+      "started": "Started",
+      "elapsed": "Elapsed"
+    },
+    "histogram": {
+      "title": "Time to finish",
+      "description": "Minutes from the last move into an in-progress state to completion, for work items completed by AI bots in the last {days} days.",
+      "empty": "No work item completed by AI bots in this period.",
+      "completed": "Completed",
+      "median": "Median",
+      "mean": "Mean",
+      "bin_width": "Bin width",
+      "duration": "Duration",
+      "work_items": "Work items"
+    }
+  },
   "workspace_invites": "Workspace invites",
   "enter_god_mode": "Enter god mode",
   "workspace_logo": "Workspace logo",

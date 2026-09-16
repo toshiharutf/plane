@@ -137,6 +137,31 @@
   "stay_ahead_of_blockers": "Anticipează blocajele.",
   "stay_ahead_of_blockers_description": "Identifică provocările între proiecte și vezi dependențele între cicluri care altfel nu sunt evidente.",
   "analytics": "Statistici",
+  "ai_status": "Starea AI",
+  "ai_status_page": {
+    "error": "Starea AI nu este disponibilă. Doar administratorii și membrii spațiului de lucru o pot vedea.",
+    "in_progress": {
+      "title": "În desfășurare",
+      "description": "Activități aflate în desfășurare și atribuite boților AI.",
+      "empty": "Momentan niciun bot AI nu lucrează la o activitate.",
+      "work_item": "Activitate",
+      "bots": "Boți AI",
+      "state": "Stare",
+      "started": "Început",
+      "elapsed": "Timp scurs"
+    },
+    "histogram": {
+      "title": "Timp până la finalizare",
+      "description": "Minute de la ultima trecere într-o stare în desfășurare până la finalizare, pentru activitățile finalizate de boții AI în ultimele {days} zile.",
+      "empty": "Boții AI nu au finalizat nicio activitate în această perioadă.",
+      "completed": "Finalizate",
+      "median": "Mediană",
+      "mean": "Medie",
+      "bin_width": "Lățimea intervalului",
+      "duration": "Durată",
+      "work_items": "Activități"
+    }
+  },
   "workspace_invites": "Invitațiile din spațiul de lucru",
   "enter_god_mode": "Activează modul Dumnezeu",
   "workspace_logo": "Sigla spațiului de lucru",
