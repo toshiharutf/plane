@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "Token input",
+      "output_tokens": "Token output",
+      "input_cache_miss": "Cache input (miss)",
+      "input_cache_hit": "Cache input (hit)"
+    },
     "label": "{count, plural, one {Item Kerja} other {Item Kerja}}",
     "all": "Semua Item Kerja",
     "edit": "Edit item kerja",

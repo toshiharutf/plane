@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "Vstupní tokeny",
+      "output_tokens": "Výstupní tokeny",
+      "input_cache_miss": "Vstupní cache (miss)",
+      "input_cache_hit": "Vstupní cache (hit)"
+    },
     "label": "{count, plural, one {Pracovní položka} few {Pracovní položky} other {Pracovních položek}}",
     "all": "Všechny pracovní položky",
     "edit": "Upravit pracovní položku",

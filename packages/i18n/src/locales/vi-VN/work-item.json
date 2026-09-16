@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "Token đầu vào",
+      "output_tokens": "Token đầu ra",
+      "input_cache_miss": "Bộ nhớ đệm đầu vào (trượt)",
+      "input_cache_hit": "Bộ nhớ đệm đầu vào (trúng)"
+    },
     "label": "{count, plural, one {mục công việc} other {mục công việc}}",
     "all": "Tất cả mục công việc",
     "edit": "Chỉnh sửa mục công việc",

@@ -151,6 +151,8 @@ from .issue.reaction import IssueReactionViewSet
 
 from .issue.sub_issue import SubIssuesEndpoint
 
+from .issue.ai_usage import IssueAIUsageSummaryEndpoint
+
 from .issue.subscriber import IssueSubscriberViewSet
 
 from .issue.version import IssueVersionEndpoint, WorkItemDescriptionVersionEndpoint

@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "入力トークン",
+      "output_tokens": "出力トークン",
+      "input_cache_miss": "入力キャッシュ（ミス）",
+      "input_cache_hit": "入力キャッシュ（ヒット）"
+    },
     "label": "{count, plural, one {作業項目} other {作業項目}}",
     "all": "すべての作業項目",
     "edit": "作業項目を編集",

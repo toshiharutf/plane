@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "輸入 token",
+      "output_tokens": "輸出 token",
+      "input_cache_miss": "輸入快取（未命中）",
+      "input_cache_hit": "輸入快取（命中）"
+    },
     "label": "{count, plural, one {工作事項} other {工作事項}}",
     "all": "所有工作事項",
     "edit": "編輯工作事項",

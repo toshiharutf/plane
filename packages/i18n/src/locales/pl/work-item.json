@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "Tokeny wejściowe",
+      "output_tokens": "Tokeny wyjściowe",
+      "input_cache_miss": "Pamięć podręczna wejścia (chybienie)",
+      "input_cache_hit": "Pamięć podręczna wejścia (trafienie)"
+    },
     "label": "{count, plural, one {Element pracy} few {Elementy pracy} other {Elementów pracy}}",
     "all": "Wszystkie elementy pracy",
     "edit": "Edytuj element pracy",
