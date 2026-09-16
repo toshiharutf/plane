@@ -38,6 +38,7 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 // plane web components
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
 import type { TIssueOperations } from "../issue-detail";
+import { IssueAIModelProperty } from "../issue-detail/ai-model-select";
 import { IssueCycleSelect } from "../issue-detail/cycle-select";
 import { IssueLabel } from "../issue-detail/label";
 import { IssueModuleSelect } from "../issue-detail/module-select";
@@ -122,6 +123,12 @@ export const PeekOverviewProperties = observer(function PeekOverviewProperties(p
             buttonClassName={`text-body-xs-medium whitespace-nowrap [&_svg]:size-3.5 ${!issue?.priority || issue?.priority === "none" ? "text-placeholder" : ""}`}
           />
         </SidebarPropertyListItem>
+
+        <IssueAIModelProperty
+          value={issue?.ai_model}
+          onChange={(val) => issueOperations.update(workspaceSlug, projectId, issueId, { ai_model: val })}
+          disabled={disabled}
+        />
 
         {createdByDetails && (
           <SidebarPropertyListItem

@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AI 模型",
+      "no_results": "沒有符合的模型"
+    },
     "label": "{count, plural, one {工作事項} other {工作事項}}",
     "all": "所有工作事項",
     "edit": "編輯工作事項",

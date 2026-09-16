@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AIモデル",
+      "no_results": "一致するモデルがありません"
+    },
     "label": "{count, plural, one {作業項目} other {作業項目}}",
     "all": "すべての作業項目",
     "edit": "作業項目を編集",

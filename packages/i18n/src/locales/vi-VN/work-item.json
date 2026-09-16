@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Mô hình AI",
+      "no_results": "Không có mô hình phù hợp"
+    },
     "label": "{count, plural, one {mục công việc} other {mục công việc}}",
     "all": "Tất cả mục công việc",
     "edit": "Chỉnh sửa mục công việc",

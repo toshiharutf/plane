@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AI model",
+      "no_results": "No matching models"
+    },
     "label": "{count, plural, one {Work item} other {Work items}}",
     "all": "All Work items",
     "edit": "Edit work item",

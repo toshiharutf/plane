@@ -101,6 +101,34 @@ class IssueManager(SoftDeletionManager):
         )
 
 
+# Model and effort combinations an AI agent may be asked to use for a work item.
+# Names follow the Claude Code (``--model <alias> --effort <level>``) and Codex
+# (``model`` + ``model_reasoning_effort``) conventions, joined with "-".
+AI_MODEL_NONE = "None"
+CLAUDE_AI_MODELS = {
+    "fable": ("low", "medium", "high", "xhigh", "max"),
+    "opus": ("low", "medium", "high", "xhigh", "max"),
+    "sonnet": ("low", "medium", "high", "xhigh", "max"),
+    "haiku": (),
+}
+OPENAI_AI_MODELS = {
+    "gpt-5.6-terra": ("low", "medium", "high", "xhigh", "max", "ultra"),
+    "gpt-5.6-luna": ("low", "medium", "high", "xhigh", "max"),
+    "gpt-5.5": ("low", "medium", "high", "xhigh"),
+}
+
+
+def _ai_model_values(models):
+    values = []
+    for name, efforts in models.items():
+        values.extend([f"{name}-{effort}" for effort in efforts] or [name])
+    return values
+
+
+AI_MODEL_VALUES = [AI_MODEL_NONE] + _ai_model_values(CLAUDE_AI_MODELS) + _ai_model_values(OPENAI_AI_MODELS)
+AI_MODEL_CHOICES = tuple((value, value) for value in AI_MODEL_VALUES)
+
+
 class Issue(ChangeTrackerMixin, ProjectBaseModel):
     TRACKED_FIELDS = ["state_id"]
 
@@ -143,6 +171,12 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
         choices=PRIORITY_CHOICES,
         verbose_name="Issue Priority",
         default="none",
+    )
+    ai_model = models.CharField(
+        max_length=64,
+        choices=AI_MODEL_CHOICES,
+        verbose_name="AI Model",
+        default=AI_MODEL_NONE,
     )
     start_date = models.DateField(null=True, blank=True)
     target_date = models.DateField(null=True, blank=True)

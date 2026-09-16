@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Modelo de AI",
+      "no_results": "No hay modelos coincidentes"
+    },
     "label": "{count, plural, one {Elemento de trabajo} other {Elementos de trabajo}}",
     "all": "Todos los elementos de trabajo",
     "edit": "Editar elemento de trabajo",

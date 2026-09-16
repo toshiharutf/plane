@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Model AI",
+      "no_results": "Tidak ada model yang cocok"
+    },
     "label": "{count, plural, one {Item Kerja} other {Item Kerja}}",
     "all": "Semua Item Kerja",
     "edit": "Edit item kerja",

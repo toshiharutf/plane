@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Model AI",
+      "no_results": "Brak pasujących modeli"
+    },
     "label": "{count, plural, one {Element pracy} few {Elementy pracy} other {Elementów pracy}}",
     "all": "Wszystkie elementy pracy",
     "edit": "Edytuj element pracy",

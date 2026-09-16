@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AI modeli",
+      "no_results": "Eşleşen model yok"
+    },
     "label": "{count, plural, one {İş öğesi} other {İş öğeleri}}",
     "all": "Tüm İş Öğeleri",
     "edit": "İş öğesini düzenle",

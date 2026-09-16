@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Model AI",
+      "no_results": "Žádné odpovídající modely"
+    },
     "label": "{count, plural, one {Pracovní položka} few {Pracovní položky} other {Pracovních položek}}",
     "all": "Všechny pracovní položky",
     "edit": "Upravit pracovní položku",

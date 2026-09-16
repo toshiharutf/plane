@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AI 模型",
+      "no_results": "没有匹配的模型"
+    },
     "label": "{count, plural, one {工作项} other {工作项}}",
     "all": "所有工作项",
     "edit": "编辑工作项",

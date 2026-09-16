@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+export * from "./ai-model";
 export * from "./common";
 export * from "./filter";
 export * from "./layout";

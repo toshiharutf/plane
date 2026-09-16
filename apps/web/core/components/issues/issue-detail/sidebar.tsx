@@ -38,6 +38,7 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 // components
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
 import { SidebarPropertyListItem } from "@/components/common/layout/sidebar/property-list-item";
+import { IssueAIModelProperty } from "./ai-model-select";
 import { IssueCycleSelect } from "./cycle-select";
 import { IssueLabel } from "./label";
 import { IssueModuleSelect } from "./module-select";
@@ -127,6 +128,12 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 buttonClassName="size-full px-2 py-0.5 whitespace-nowrap [&_svg]:size-3.5"
               />
             </SidebarPropertyListItem>
+
+            <IssueAIModelProperty
+              value={issue?.ai_model}
+              onChange={(val) => issueOperations.update(workspaceSlug, projectId, issueId, { ai_model: val })}
+              disabled={!isEditable}
+            />
 
             {createdByDetails && (
               <SidebarPropertyListItem icon={UserCirclePropertyIcon} label={t("common.created_by")}>

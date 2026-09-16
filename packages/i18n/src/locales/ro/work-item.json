@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Model AI",
+      "no_results": "Niciun model potrivit"
+    },
     "label": "{count, plural, one {Activitate} other {Activități}}",
     "all": "Toate activitățile",
     "edit": "Editează activitatea",
