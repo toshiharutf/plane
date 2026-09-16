@@ -36,6 +36,7 @@ export interface IProjectIssues extends IBaseIssuesStore {
     projectId: string,
     loadType: TLoader
   ) => Promise<TIssuesResponse | undefined>;
+  refreshIssues: (workspaceSlug: string, projectId: string) => Promise<TIssuesResponse | undefined>;
   fetchNextIssues: (
     workspaceSlug: string,
     projectId: string,
@@ -69,6 +70,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
+      refreshIssues: action,
 
       quickAddIssue: action,
     });
@@ -182,6 +184,28 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   ) => {
     if (!this.paginationOptions) return;
     return await this.fetchIssues(workspaceSlug, projectId, loadType, this.paginationOptions, true);
+  };
+
+  /**
+   * Refetches the first page with the existing pagination options without a loader and without
+   * clearing the list first, so the displayed work items are swapped in place once the response
+   * arrives. Used to pick up changes made outside this client (API, bots, other users).
+   * @param workspaceSlug
+   * @param projectId
+   * @returns
+   */
+  refreshIssues = async (workspaceSlug: string, projectId: string) => {
+    const options = this.paginationOptions;
+    if (!options) return;
+
+    const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
+    // a filter change or regular fetch in the meantime aborts this request through the shared controller
+    const response = await this.issueService.getIssues(workspaceSlug, projectId, params, {
+      signal: this.controller.signal,
+    });
+
+    this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, false);
+    return response;
   };
 
   /**
