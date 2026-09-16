@@ -10,6 +10,7 @@ A bot authenticated with its API key can:
 - update only work items it is assigned to,
 - create sub work items under work items it is assigned to,
 - comment on any work item and edit only its own comments,
+- add links to work items it is assigned to and edit or delete only its own links,
 - create relations between any work items,
 - read public pages, create pages, and update only pages it owns.
 """
@@ -22,6 +23,7 @@ from plane.db.models import (
     Issue,
     IssueAssignee,
     IssueComment,
+    IssueLink,
     IssueRelation,
     Page,
     Project,
@@ -38,6 +40,7 @@ def _v1(slug, project_id, suffix=""):
 def _stub_tasks(monkeypatch):
     monkeypatch.setattr("plane.api.views.issue.issue_activity.delay", lambda **kwargs: None)
     monkeypatch.setattr("plane.api.views.issue.model_activity.delay", lambda **kwargs: None)
+    monkeypatch.setattr("plane.api.views.issue.crawl_work_item_link_title.delay", lambda *args, **kwargs: None)
     monkeypatch.setattr("plane.api.views.page.page_transaction.delay", lambda **kwargs: None)
 
 
@@ -445,3 +448,101 @@ class TestAIBotPageAccess:
         assert edited.status_code == status.HTTP_200_OK, edited.data
         hidden = bot_client.get(_v1(workspace.slug, project.id, f"pages/{created.data['id']}/"))
         assert hidden.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIBotLinkAccess:
+    def test_bot_creates_link_on_assigned_work_item_and_reads_all_links(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        own = _create_issue(project, workspace, state, create_user, "Bot task", [bot_id])
+        human = _create_issue(project, workspace, state, create_user, "Human task", [str(create_user.id)])
+        human_link = IssueLink.objects.create(
+            issue=human, project=project, workspace=workspace, url="https://example.com/spec", created_by=create_user
+        )
+
+        created = bot_client.post(
+            _v1(workspace.slug, project.id, f"work-items/{own.id}/links/"),
+            {"url": "https://example.com/pr/1", "title": "PR"},
+            format="json",
+        )
+        assert created.status_code == status.HTTP_201_CREATED, created.data
+        link = IssueLink.objects.get(pk=created.data["id"])
+        assert str(link.created_by_id) == bot_id
+        assert link.issue_id == own.id
+
+        listed = bot_client.get(_v1(workspace.slug, project.id, f"work-items/{human.id}/links/"))
+        assert listed.status_code == status.HTTP_200_OK
+        assert {str(l["id"]) for l in listed.data["results"]} == {str(human_link.id)}
+
+        detail = bot_client.get(_v1(workspace.slug, project.id, f"work-items/{human.id}/links/{human_link.id}/"))
+        assert detail.status_code == status.HTTP_200_OK
+
+    def test_bot_cannot_create_link_on_unassigned_work_item(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        _bot_id, bot_client = bot
+        human = _create_issue(project, workspace, state, create_user, "Human task", [str(create_user.id)])
+        unassigned = _create_issue(project, workspace, state, create_user, "Nobody's task")
+
+        for issue in (human, unassigned):
+            response = bot_client.post(
+                _v1(workspace.slug, project.id, f"work-items/{issue.id}/links/"),
+                {"url": "https://example.com/rogue"},
+                format="json",
+            )
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not IssueLink.objects.filter(url="https://example.com/rogue").exists()
+
+    def test_bot_edits_and_deletes_only_its_own_links(self, workspace, project, state, create_user, bot, monkeypatch):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        issue = _create_issue(project, workspace, state, create_user, "Pair task", [bot_id, str(create_user.id)])
+        links_url = _v1(workspace.slug, project.id, f"work-items/{issue.id}/links/")
+        human_link = IssueLink.objects.create(
+            issue=issue, project=project, workspace=workspace, url="https://example.com/human", created_by=create_user
+        )
+        created = bot_client.post(links_url, {"url": "https://example.com/bot"}, format="json")
+        assert created.status_code == status.HTTP_201_CREATED, created.data
+        bot_link_id = created.data["id"]
+
+        own_update = bot_client.patch(f"{links_url}{bot_link_id}/", {"title": "Bot link v2"}, format="json")
+        assert own_update.status_code == status.HTTP_200_OK, own_update.data
+        assert IssueLink.objects.get(pk=bot_link_id).title == "Bot link v2"
+
+        foreign_update = bot_client.patch(f"{links_url}{human_link.id}/", {"title": "Tampered"}, format="json")
+        foreign_delete = bot_client.delete(f"{links_url}{human_link.id}/")
+        assert foreign_update.status_code == status.HTTP_403_FORBIDDEN
+        assert foreign_delete.status_code == status.HTTP_403_FORBIDDEN
+        human_link.refresh_from_db()
+        assert human_link.title is None
+
+        own_delete = bot_client.delete(f"{links_url}{bot_link_id}/")
+        assert own_delete.status_code == status.HTTP_204_NO_CONTENT
+        assert not IssueLink.objects.filter(pk=bot_link_id).exists()
+
+    def test_bot_cannot_edit_own_link_through_another_work_item(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        own = _create_issue(project, workspace, state, create_user, "Bot task", [bot_id])
+        other = _create_issue(project, workspace, state, create_user, "Other task", [bot_id])
+        created = bot_client.post(
+            _v1(workspace.slug, project.id, f"work-items/{own.id}/links/"),
+            {"url": "https://example.com/bot"},
+            format="json",
+        )
+        assert created.status_code == status.HTTP_201_CREATED, created.data
+
+        response = bot_client.patch(
+            _v1(workspace.slug, project.id, f"work-items/{other.id}/links/{created.data['id']}/"),
+            {"title": "Moved"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

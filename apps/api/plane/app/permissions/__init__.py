@@ -24,6 +24,7 @@ from .ai_bot import (
     ProjectEntityOrAIBotReadOnlyPermission,
     ProjectEntityOrAIBotWorkItemPermission,
     ProjectLiteOrAIBotCommentPermission,
+    ProjectEntityOrAIBotLinkPermission,
     ProjectEntityOrAIBotRelationPermission,
     ProjectEntityOrAIBotPagePermission,
 )

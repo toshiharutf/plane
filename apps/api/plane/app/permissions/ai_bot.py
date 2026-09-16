@@ -12,6 +12,8 @@ narrower set of rights:
 - Work items: read everything, update only work items it is assigned to, and
   create sub work items under work items it is assigned to.
 - Comments: read and create on any work item, update or delete only its own.
+- Links: read everything, create only on work items it is assigned to, and
+  update or delete only links it created.
 - Relations: read and create between any work items.
 - Pages: read public pages, create pages, update only pages it owns.
 """
@@ -22,7 +24,7 @@ import uuid
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 # Module imports
-from plane.db.models import IssueComment, Page
+from plane.db.models import IssueComment, IssueLink, Page
 from plane.utils.members import is_issue_assigned_to_user, is_workspace_ai_agent
 
 from .project import ProjectEntityPermission, ProjectLitePermission
@@ -111,6 +113,47 @@ class ProjectLiteOrAIBotCommentPermission(ProjectLitePermission):
                     project_id=view.project_id,
                     issue_id=view.kwargs.get("issue_id"),
                     actor_id=request.user.id,
+                ).exists()
+            )
+
+        return False
+
+
+class ProjectEntityOrAIBotLinkPermission(ProjectEntityPermission):
+    """Project members keep full access.
+
+    AI bots may read every link, ``POST`` links only on work items they are
+    assigned to, and update or delete only the links they created.
+    """
+
+    def has_permission(self, request, view):
+        if super().has_permission(request, view):
+            return True
+
+        if not is_workspace_ai_agent(request.user, view.workspace_slug):
+            return False
+
+        if request.method in SAFE_METHODS:
+            return True
+
+        project_id = view.project_id
+        issue_id = view.kwargs.get("issue_id")
+        if not project_id or not issue_id:
+            return False
+
+        if request.method == "POST":
+            return is_issue_assigned_to_user(issue_id, project_id, view.workspace_slug, request.user.id)
+
+        if request.method in ("PATCH", "PUT", "DELETE"):
+            link_id = view.kwargs.get("pk")
+            return bool(
+                link_id
+                and IssueLink.objects.filter(
+                    pk=link_id,
+                    workspace__slug=view.workspace_slug,
+                    project_id=project_id,
+                    issue_id=issue_id,
+                    created_by_id=request.user.id,
                 ).exists()
             )
 

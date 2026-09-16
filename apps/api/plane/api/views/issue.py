@@ -63,6 +63,7 @@ from plane.app.permissions import (
     ProjectEntityOrAIBotReadOnlyPermission,
     ProjectEntityOrAIBotWorkItemPermission,
     ProjectLiteOrAIBotCommentPermission,
+    ProjectEntityOrAIBotLinkPermission,
     ProjectEntityOrAIBotRelationPermission,
     ProjectMemberPermission,
 )
@@ -1142,7 +1143,7 @@ class IssueLinkListCreateAPIEndpoint(BaseAPIView):
 
     serializer_class = IssueLinkSerializer
     model = IssueLink
-    permission_classes = [ProjectEntityOrAIBotReadOnlyPermission]
+    permission_classes = [ProjectEntityOrAIBotLinkPermission]
     use_read_replica = True
 
     def get_queryset(self):
@@ -1243,7 +1244,7 @@ class IssueLinkListCreateAPIEndpoint(BaseAPIView):
 class IssueLinkDetailAPIEndpoint(BaseAPIView):
     """Issue Link Detail Endpoint"""
 
-    permission_classes = [ProjectEntityOrAIBotReadOnlyPermission]
+    permission_classes = [ProjectEntityOrAIBotLinkPermission]
 
     model = IssueLink
     serializer_class = IssueLinkSerializer
