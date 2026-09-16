@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "Tokenuri de intrare",
+      "output_tokens": "Tokenuri de ieșire",
+      "input_cache_miss": "Cache de intrare (ratare)",
+      "input_cache_hit": "Cache de intrare (succes)"
+    },
     "label": "{count, plural, one {Activitate} other {Activități}}",
     "all": "Toate activitățile",
     "edit": "Editează activitatea",

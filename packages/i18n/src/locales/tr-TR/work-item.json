@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "Girdi token'ları",
+      "output_tokens": "Çıktı token'ları",
+      "input_cache_miss": "Girdi önbelleği (ıska)",
+      "input_cache_hit": "Girdi önbelleği (isabet)"
+    },
     "label": "{count, plural, one {İş öğesi} other {İş öğeleri}}",
     "all": "Tüm İş Öğeleri",
     "edit": "İş öğesini düzenle",

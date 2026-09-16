@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "输入 token",
+      "output_tokens": "输出 token",
+      "input_cache_miss": "输入缓存（未命中）",
+      "input_cache_hit": "输入缓存（命中）"
+    },
     "label": "{count, plural, one {工作项} other {工作项}}",
     "all": "所有工作项",
     "edit": "编辑工作项",

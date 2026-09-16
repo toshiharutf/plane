@@ -8,6 +8,7 @@ from plane.app.views import (
     BulkCreateIssueLabelsEndpoint,
     BulkDeleteIssuesEndpoint,
     SubIssuesEndpoint,
+    IssueAIUsageSummaryEndpoint,
     IssueLinkViewSet,
     IssueAttachmentEndpoint,
     CommentReactionViewSet,
@@ -111,6 +112,11 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/sub-issues/",
         SubIssuesEndpoint.as_view(),
         name="sub-issues",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-usage/",
+        IssueAIUsageSummaryEndpoint.as_view(),
+        name="project-issue-ai-usage",
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/issue-links/",

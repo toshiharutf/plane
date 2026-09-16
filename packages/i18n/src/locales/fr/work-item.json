@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "Tokens d’entrée",
+      "output_tokens": "Tokens de sortie",
+      "input_cache_miss": "Cache d’entrée (échec)",
+      "input_cache_hit": "Cache d’entrée (succès)"
+    },
     "label": "{count, plural, one {Élément de travail} other {Éléments de travail}}",
     "all": "Tous les éléments de travail",
     "edit": "Modifier l’élément de travail",

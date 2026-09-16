@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "입력 토큰",
+      "output_tokens": "출력 토큰",
+      "input_cache_miss": "입력 캐시(미스)",
+      "input_cache_hit": "입력 캐시(히트)"
+    },
     "label": "{count, plural, one {작업 항목} other {작업 항목}}",
     "all": "모든 작업 항목",
     "edit": "작업 항목 편집",

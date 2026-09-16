@@ -1,5 +1,11 @@
 {
   "issue": {
+    "ai_usage": {
+      "input_tokens": "Eingabe-Tokens",
+      "output_tokens": "Ausgabe-Tokens",
+      "input_cache_miss": "Eingabe-Cache (Miss)",
+      "input_cache_hit": "Eingabe-Cache (Hit)"
+    },
     "label": "{count, plural, one {Arbeitselement} few {Arbeitselemente} other {Arbeitselemente}}",
     "all": "Alle Arbeitselemente",
     "edit": "Arbeitselement bearbeiten",
