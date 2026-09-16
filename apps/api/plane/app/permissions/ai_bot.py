@@ -15,6 +15,7 @@ narrower set of rights:
 - Links: read everything, create only on work items it is assigned to, and
   update or delete only links it created.
 - Relations: read and create between any work items.
+- AI usage: read everything, report usage only on work items it is assigned to.
 - Pages: read public pages, create pages, update only pages it owns.
 """
 
@@ -156,6 +157,31 @@ class ProjectEntityOrAIBotLinkPermission(ProjectEntityPermission):
                     created_by_id=request.user.id,
                 ).exists()
             )
+
+        return False
+
+
+class ProjectEntityOrAIBotAIUsagePermission(ProjectEntityPermission):
+    """Project members keep full access.
+
+    AI bots may read every usage record and ``POST`` usage only on work items
+    they are assigned to.
+    """
+
+    def has_permission(self, request, view):
+        if super().has_permission(request, view):
+            return True
+
+        if not is_workspace_ai_agent(request.user, view.workspace_slug):
+            return False
+
+        if request.method in SAFE_METHODS:
+            return True
+
+        project_id = view.project_id
+        issue_id = view.kwargs.get("issue_id")
+        if request.method == "POST" and project_id and issue_id:
+            return is_issue_assigned_to_user(issue_id, project_id, view.workspace_slug, request.user.id)
 
         return False
 

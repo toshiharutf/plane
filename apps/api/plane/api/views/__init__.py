@@ -74,3 +74,5 @@ from .invite import WorkspaceInvitationsViewset
 from .sticky import StickyViewSet
 
 from .page import PageListCreateAPIEndpoint, PageDetailAPIEndpoint
+
+from .ai_usage import WorkItemAIUsageListCreateAPIEndpoint
