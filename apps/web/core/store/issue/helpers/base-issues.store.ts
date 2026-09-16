@@ -46,6 +46,15 @@ import {
 } from "./base-issues-utils";
 import type { IBaseIssueFilterStore } from "./issue-filter-helper.store";
 
+// fields whose update makes the server recompute start/target dates and datetimes
+const DATETIME_SYNC_FIELDS: (keyof TIssue)[] = [
+  "state_id",
+  "start_date",
+  "target_date",
+  "start_datetime",
+  "target_datetime",
+];
+
 export type TIssueDisplayFilterOptions = Exclude<TIssueGroupByOptions, null> | "target_date";
 
 export enum EIssueGroupedAction {
@@ -578,6 +587,10 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
       // call API to update the issue
       await this.issueService.patchIssue(workspaceSlug, projectId, issueId, data);
 
+      // the server fills start/target datetimes on state changes and re-syncs them with the dates
+      if (DATETIME_SYNC_FIELDS.some((field) => field in data))
+        this.refreshIssueDates(workspaceSlug, projectId, issueId);
+
       // call fetch Parent Stats
       this.fetchParentStats(workspaceSlug, projectId);
     } catch (error) {
@@ -585,6 +598,28 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
       this.rootIssueStore.issues.updateIssue(issueId, issueBeforeUpdate ?? {});
       this.updateIssueList(issueBeforeUpdate, { ...issueBeforeUpdate, ...data } as TIssue);
       throw error;
+    }
+  }
+
+  /**
+   * Re-reads the server-managed date fields of an issue after a state or date change
+   * @param workspaceSlug
+   * @param projectId
+   * @param issueId
+   */
+  async refreshIssueDates(workspaceSlug: string, projectId: string, issueId: string) {
+    try {
+      const issue: TIssue = await this.issueService.retrieve(workspaceSlug, projectId, issueId);
+      if (!issue) return;
+      this.rootIssueStore.issues.updateIssue(issueId, {
+        start_date: issue.start_date,
+        target_date: issue.target_date,
+        start_datetime: issue.start_datetime ?? null,
+        target_datetime: issue.target_datetime ?? null,
+        completed_at: issue.completed_at,
+      });
+    } catch (error) {
+      console.error("Error refreshing work item dates:", error);
     }
   }
 

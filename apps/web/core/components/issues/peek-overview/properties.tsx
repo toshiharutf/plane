@@ -39,6 +39,7 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
 import type { TIssueOperations } from "../issue-detail";
 import { IssueCycleSelect } from "../issue-detail/cycle-select";
+import { IssueDatetimeTimeInput } from "../issue-detail/datetime-time-input";
 import { IssueLabel } from "../issue-detail/label";
 import { IssueModuleSelect } from "../issue-detail/module-select";
 
@@ -140,23 +141,32 @@ export const PeekOverviewProperties = observer(function PeekOverviewProperties(p
         )}
 
         <SidebarPropertyListItem icon={StartDatePropertyIcon} label={t("common.order_by.start_date")}>
-          <DateDropdown
-            value={issue.start_date}
-            onChange={(val) =>
-              issueOperations.update(workspaceSlug, projectId, issueId, {
-                start_date: val ? renderFormattedPayloadDate(val) : null,
-              })
-            }
-            placeholder={t("issue.add.start_date")}
-            buttonVariant="transparent-with-text"
-            maxDate={maxDate ?? undefined}
-            disabled={disabled}
-            className="group w-full grow"
-            buttonContainerClassName="w-full text-left h-7.5"
-            buttonClassName={`text-body-xs-medium ${issue?.start_date ? "" : "text-placeholder"}`}
-            hideIcon
-            clearIconClassName="h-3 w-3 hidden group-hover:inline"
-          />
+          <div className="flex w-full items-center gap-2">
+            <DateDropdown
+              value={issue.start_date}
+              onChange={(val) =>
+                issueOperations.update(workspaceSlug, projectId, issueId, {
+                  start_date: val ? renderFormattedPayloadDate(val) : null,
+                })
+              }
+              placeholder={t("issue.add.start_date")}
+              buttonVariant="transparent-with-text"
+              maxDate={maxDate ?? undefined}
+              disabled={disabled}
+              className="group w-full grow"
+              buttonContainerClassName="w-full text-left h-7.5"
+              buttonClassName={`text-body-xs-medium ${issue?.start_date ? "" : "text-placeholder"}`}
+              hideIcon
+              clearIconClassName="h-3 w-3 hidden group-hover:inline"
+            />
+            <IssueDatetimeTimeInput
+              date={issue.start_date}
+              datetime={issue.start_datetime}
+              onChange={(val) => issueOperations.update(workspaceSlug, projectId, issueId, { start_datetime: val })}
+              disabled={disabled}
+              ariaLabel={t("common.order_by.start_date")}
+            />
+          </div>
         </SidebarPropertyListItem>
 
         <SidebarPropertyListItem icon={DueDatePropertyIcon} label={t("common.order_by.due_date")}>
@@ -180,6 +190,13 @@ export const PeekOverviewProperties = observer(function PeekOverviewProperties(p
               })}
               hideIcon
               clearIconClassName="h-3 w-3 hidden group-hover:inline text-primary"
+            />
+            <IssueDatetimeTimeInput
+              date={issue.target_date}
+              datetime={issue.target_datetime}
+              onChange={(val) => issueOperations.update(workspaceSlug, projectId, issueId, { target_datetime: val })}
+              disabled={disabled}
+              ariaLabel={t("common.order_by.due_date")}
             />
           </div>
         </SidebarPropertyListItem>

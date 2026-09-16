@@ -39,6 +39,7 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
 import { SidebarPropertyListItem } from "@/components/common/layout/sidebar/property-list-item";
 import { IssueCycleSelect } from "./cycle-select";
+import { IssueDatetimeTimeInput } from "./datetime-time-input";
 import { IssueLabel } from "./label";
 import { IssueModuleSelect } from "./module-select";
 import type { TIssueOperations } from "./root";
@@ -138,23 +139,32 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
             )}
 
             <SidebarPropertyListItem icon={StartDatePropertyIcon} label={t("common.order_by.start_date")}>
-              <DateDropdown
-                placeholder={t("issue.add.start_date")}
-                value={issue.start_date}
-                onChange={(val) =>
-                  issueOperations.update(workspaceSlug, projectId, issueId, {
-                    start_date: val ? renderFormattedPayloadDate(val) : null,
-                  })
-                }
-                maxDate={maxDate ?? undefined}
-                disabled={!isEditable}
-                buttonVariant="transparent-with-text"
-                className="group w-full grow"
-                buttonContainerClassName="w-full text-left h-7.5"
-                buttonClassName={`text-body-xs-regular ${issue?.start_date ? "" : "text-placeholder"}`}
-                hideIcon
-                clearIconClassName="h-3 w-3 hidden group-hover:inline"
-              />
+              <div className="flex w-full items-center gap-2">
+                <DateDropdown
+                  placeholder={t("issue.add.start_date")}
+                  value={issue.start_date}
+                  onChange={(val) =>
+                    issueOperations.update(workspaceSlug, projectId, issueId, {
+                      start_date: val ? renderFormattedPayloadDate(val) : null,
+                    })
+                  }
+                  maxDate={maxDate ?? undefined}
+                  disabled={!isEditable}
+                  buttonVariant="transparent-with-text"
+                  className="group w-full grow"
+                  buttonContainerClassName="w-full text-left h-7.5"
+                  buttonClassName={`text-body-xs-regular ${issue?.start_date ? "" : "text-placeholder"}`}
+                  hideIcon
+                  clearIconClassName="h-3 w-3 hidden group-hover:inline"
+                />
+                <IssueDatetimeTimeInput
+                  date={issue.start_date}
+                  datetime={issue.start_datetime}
+                  onChange={(val) => issueOperations.update(workspaceSlug, projectId, issueId, { start_datetime: val })}
+                  disabled={!isEditable}
+                  ariaLabel={t("common.order_by.start_date")}
+                />
+              </div>
             </SidebarPropertyListItem>
 
             <SidebarPropertyListItem icon={DueDatePropertyIcon} label={t("common.order_by.due_date")}>
@@ -178,6 +188,15 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                   })}
                   hideIcon
                   clearIconClassName="h-3 w-3 hidden group-hover:inline text-primary"
+                />
+                <IssueDatetimeTimeInput
+                  date={issue.target_date}
+                  datetime={issue.target_datetime}
+                  onChange={(val) =>
+                    issueOperations.update(workspaceSlug, projectId, issueId, { target_datetime: val })
+                  }
+                  disabled={!isEditable}
+                  ariaLabel={t("common.order_by.due_date")}
                 />
               </div>
             </SidebarPropertyListItem>
