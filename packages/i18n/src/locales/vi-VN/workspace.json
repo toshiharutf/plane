@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "Phân tích",
     "page_label": "{workspace} - Phân tích",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "Mức sử dụng AI",
+      "description": "Số token dùng cho mỗi mục công việc đã hoàn thành, cộng dồn qua mọi phiên cho từng mô hình AI.",
+      "work_item": "Mục công việc",
+      "tokens": "Token",
+      "input_tokens": "Token đầu vào",
+      "output_tokens": "Token đầu ra",
+      "cache_miss": "Bộ nhớ đệm đầu vào (miss)",
+      "cache_hit": "Bộ nhớ đệm đầu vào (hit)",
+      "empty_state": "Chưa có mức sử dụng AI nào được báo cáo cho các mục công việc đã hoàn thành."
+    },
     "open_tasks": "Tổng nhiệm vụ đang mở",
     "error": "Đã xảy ra lỗi khi truy xuất dữ liệu.",
     "work_items_closed_in": "Mục công việc đã đóng trong",

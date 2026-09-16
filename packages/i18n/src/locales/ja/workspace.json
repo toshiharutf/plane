@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "アナリティクス",
     "page_label": "{workspace} - アナリティクス",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "AI 使用量",
+      "description": "完了した作業項目ごとのトークン使用量（AI モデルごとに全セッションを合計）。",
+      "work_item": "作業項目",
+      "tokens": "トークン",
+      "input_tokens": "入力トークン",
+      "output_tokens": "出力トークン",
+      "cache_miss": "入力キャッシュ（ミス）",
+      "cache_hit": "入力キャッシュ（ヒット）",
+      "empty_state": "完了した作業項目の AI 使用量はまだ報告されていません。"
+    },
     "open_tasks": "オープンタスクの合計",
     "error": "データの取得中にエラーが発生しました。",
     "work_items_closed_in": "クローズされた作業項目",

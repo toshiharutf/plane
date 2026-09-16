@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "분석",
     "page_label": "{workspace} - 분석",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "AI 사용량",
+      "description": "완료된 작업 항목별 토큰 사용량으로, AI 모델마다 모든 세션을 합산합니다.",
+      "work_item": "작업 항목",
+      "tokens": "토큰",
+      "input_tokens": "입력 토큰",
+      "output_tokens": "출력 토큰",
+      "cache_miss": "입력 캐시(미스)",
+      "cache_hit": "입력 캐시(히트)",
+      "empty_state": "완료된 작업 항목에 대해 보고된 AI 사용량이 아직 없습니다."
+    },
     "open_tasks": "열린 작업 항목",
     "error": "데이터를 가져오는 중 오류가 발생했습니다.",
     "work_items_closed_in": "닫힌 작업 항목",

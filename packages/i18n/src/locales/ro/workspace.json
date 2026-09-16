@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "Statistici",
     "page_label": "{workspace} - Statistici",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "Utilizare AI",
+      "description": "Tokeni folosiți pentru fiecare activitate finalizată, însumați pe toate sesiunile pentru fiecare model AI.",
+      "work_item": "Activitate",
+      "tokens": "Tokeni",
+      "input_tokens": "Tokeni de intrare",
+      "output_tokens": "Tokeni de ieșire",
+      "cache_miss": "Cache de intrare (miss)",
+      "cache_hit": "Cache de intrare (hit)",
+      "empty_state": "Nu a fost raportată încă nicio utilizare AI pentru activitățile finalizate."
+    },
     "open_tasks": "Total activități deschise",
     "error": "A apărut o eroare la preluarea datelor.",
     "work_items_closed_in": "Activități finalizate în",
