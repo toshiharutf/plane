@@ -15,6 +15,7 @@ from django.db.models import (
     Exists,
     F,
     Func,
+    Max,
     OuterRef,
     Prefetch,
     Q,
@@ -49,6 +50,7 @@ from plane.db.models import (
     FileAsset,
     IntakeIssue,
     Issue,
+    IssueActivity,
     IssueAssignee,
     IssueLabel,
     IssueLink,
@@ -1190,6 +1192,37 @@ class IssueMetaEndpoint(BaseAPIView):
             {
                 "sequence_id": issue.sequence_id,
                 "project_identifier": issue.project.identifier,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class IssueSyncStateEndpoint(BaseAPIView):
+    """
+    Cheap change token for a project's work items, polled by the web app to
+    refresh open views when work items are changed elsewhere (API, bots, other
+    users). Changes made by the requesting user are ignored so that a client
+    does not refetch after its own edits.
+    """
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="PROJECT")
+    def get(self, request, slug, project_id):
+        # all_objects so that soft deleted work items also move the token
+        latest_issue_update = (
+            Issue.all_objects.filter(workspace__slug=slug, project_id=project_id)
+            .exclude(updated_by=request.user)
+            .aggregate(latest=Max("updated_at"))["latest"]
+        )
+        # activities cover comments, links, relations and other side records
+        latest_activity = (
+            IssueActivity.objects.filter(workspace__slug=slug, project_id=project_id)
+            .exclude(actor=request.user)
+            .aggregate(latest=Max("created_at"))["latest"]
+        )
+        return Response(
+            {
+                "latest_issue_updated_at": latest_issue_update,
+                "latest_activity_at": latest_activity,
             },
             status=status.HTTP_200_OK,
         )

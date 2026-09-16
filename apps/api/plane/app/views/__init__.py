@@ -128,6 +128,7 @@ from .issue.base import (
     IssueDetailEndpoint,
     IssueBulkUpdateDateEndpoint,
     IssueMetaEndpoint,
+    IssueSyncStateEndpoint,
     IssueDetailIdentifierEndpoint,
 )
 

@@ -30,6 +30,7 @@ from plane.app.views import (
     IssueVersionEndpoint,
     WorkItemDescriptionVersionEndpoint,
     IssueMetaEndpoint,
+    IssueSyncStateEndpoint,
     IssueDetailIdentifierEndpoint,
 )
 
@@ -48,6 +49,11 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues-detail/",
         IssueDetailEndpoint.as_view(),
         name="project-issue-detail",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues-sync-state/",
+        IssueSyncStateEndpoint.as_view(),
+        name="project-issue-sync-state",
     ),
     # updated v1 paginated issues
     # updated v2 paginated issues

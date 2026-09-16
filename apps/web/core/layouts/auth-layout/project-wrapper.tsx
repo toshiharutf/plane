@@ -37,6 +37,7 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 import { useProjectView } from "@/hooks/store/use-project-view";
 import { useUser, useUserPermissions } from "@/hooks/store/user";
 import { useTimeLineChart } from "@/hooks/use-timeline-chart";
+import { useWorkItemsAutoRefresh } from "@/hooks/use-work-items-auto-refresh";
 
 interface IProjectAuthWrapper {
   workspaceSlug: string;
@@ -73,6 +74,8 @@ export const ProjectAuthWrapper = observer(function ProjectAuthWrapper(props: IP
   );
   const currentProjectRole = getProjectRoleByWorkspaceSlugAndProjectId(workspaceSlug, projectId);
   const isWorkspaceAdmin = allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.WORKSPACE, workspaceSlug);
+  // refresh open work item views when work items change outside this client (API, bots, other users)
+  useWorkItemsAutoRefresh(hasPermissionToCurrentProject ? workspaceSlug : undefined, projectId);
   // Initialize module timeline chart
   useEffect(() => {
     initGantt();

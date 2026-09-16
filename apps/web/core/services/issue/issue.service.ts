@@ -421,6 +421,20 @@ export class IssueService extends APIService {
       });
   }
 
+  async getSyncState(
+    workspaceSlug: string,
+    projectId: string
+  ): Promise<{
+    latest_issue_updated_at: string | null;
+    latest_activity_at: string | null;
+  }> {
+    return this.get(`/api/workspaces/${workspaceSlug}/projects/${projectId}/issues-sync-state/`)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   async getIssueMetaFromURL(
     workspaceSlug: string,
     projectId: string,
