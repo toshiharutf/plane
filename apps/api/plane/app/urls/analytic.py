@@ -18,6 +18,7 @@ from plane.app.views import (
     ProjectAdvanceAnalyticsEndpoint,
     ProjectAdvanceAnalyticsStatsEndpoint,
     ProjectAdvanceAnalyticsChartEndpoint,
+    WorkspaceAIUsageAnalyticsEndpoint,
 )
 
 
@@ -71,6 +72,11 @@ urlpatterns = [
         "workspaces/<str:slug>/advance-analytics-charts/",
         AdvanceAnalyticsChartEndpoint.as_view(),
         name="advance-analytics-chart",
+    ),
+    path(
+        "workspaces/<str:slug>/analytics/ai-usage/",
+        WorkspaceAIUsageAnalyticsEndpoint.as_view(),
+        name="workspace-ai-usage-analytics",
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/advance-analytics/",
