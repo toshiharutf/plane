@@ -4,7 +4,7 @@
 
 from django.db.models import Q
 
-from plane.db.models import BotTypeEnum, ProjectMember, WorkspaceMember
+from plane.db.models import BotTypeEnum, IssueAssignee, ProjectMember, WorkspaceMember
 
 ASSIGNABLE_PROJECT_MEMBER_ROLE = 15
 
@@ -27,6 +27,27 @@ def is_ai_agent_user(user):
         and getattr(user, "is_bot", False)
         and getattr(user, "bot_type", None) == BotTypeEnum.AI_AGENT
     )
+
+
+def is_workspace_ai_agent(user, workspace_slug):
+    """True when ``user`` is an AI_AGENT bot that is an active, assignable member of the workspace."""
+    return is_ai_agent_user(user) and WorkspaceMember.objects.filter(
+        workspace__slug=workspace_slug,
+        member=user,
+        role__gte=ASSIGNABLE_PROJECT_MEMBER_ROLE,
+        is_active=True,
+    ).exists()
+
+
+def is_issue_assigned_to_user(issue_id, project_id, workspace_slug, user_id):
+    """True when ``user_id`` is one of the current assignees of the work item."""
+    return IssueAssignee.objects.filter(
+        issue_id=issue_id,
+        project_id=project_id,
+        workspace__slug=workspace_slug,
+        assignee_id=user_id,
+        deleted_at__isnull=True,
+    ).exists()
 
 
 def active_assignee_q(prefix="assignees__"):

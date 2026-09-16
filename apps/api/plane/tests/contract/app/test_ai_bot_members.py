@@ -282,7 +282,7 @@ class TestAIBotMembers:
         assert issue_response.data["description_html"] == "<p>Refined by AI.</p>"
         assert str(issue_response.data["state"]) == str(started_state.id)
 
-    def test_ai_bot_api_token_cannot_update_coassigned_or_human_issue(
+    def test_ai_bot_api_token_cannot_update_human_issue(
         self, session_client, workspace, project, create_user, monkeypatch
     ):
         _stub_issue_activity_tasks(monkeypatch)
@@ -301,7 +301,7 @@ class TestAIBotMembers:
             {
                 "name": "Human owned work",
                 "state_id": str(state.id),
-                "assignee_ids": [bot_id, str(create_user.id)],
+                "assignee_ids": [str(create_user.id)],
             },
             format="json",
         )
@@ -316,7 +316,7 @@ class TestAIBotMembers:
 
         assert update_response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_ai_bot_api_token_cannot_update_non_description_or_state_fields(
+    def test_ai_bot_api_token_can_update_other_fields_of_assigned_issue(
         self, session_client, workspace, project, create_user, monkeypatch
     ):
         _stub_issue_activity_tasks(monkeypatch)
@@ -343,8 +343,10 @@ class TestAIBotMembers:
         bot_client.credentials(HTTP_X_API_KEY=bot_token)
         update_response = bot_client.patch(
             f"{_api_work_items_url(workspace.slug, project.id)}{issue_response.data['id']}/",
-            {"name": "Bot should not rename this"},
+            {"name": "Renamed by the assigned bot", "priority": "high"},
             format="json",
         )
 
-        assert update_response.status_code == status.HTTP_403_FORBIDDEN
+        assert update_response.status_code == status.HTTP_200_OK, update_response.data
+        assert update_response.data["name"] == "Renamed by the assigned bot"
+        assert update_response.data["priority"] == "high"

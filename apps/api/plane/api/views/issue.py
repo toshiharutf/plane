@@ -30,7 +30,6 @@ from django.conf import settings
 
 # Third party imports
 from rest_framework import status
-from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 
 # drf-spectacular imports
@@ -61,8 +60,10 @@ from plane.api.serializers import (
     RelatedIssueSerializer,
 )
 from plane.app.permissions import (
-    ProjectEntityPermission,
-    ProjectLitePermission,
+    ProjectEntityOrAIBotReadOnlyPermission,
+    ProjectEntityOrAIBotWorkItemPermission,
+    ProjectLiteOrAIBotCommentPermission,
+    ProjectEntityOrAIBotRelationPermission,
     ProjectMemberPermission,
 )
 from plane.bgtasks.issue_activities_task import issue_activity
@@ -77,10 +78,7 @@ from plane.db.models import (
     Project,
     ProjectMember,
     CycleIssue,
-    BotTypeEnum,
-    IssueAssignee,
     Workspace,
-    WorkspaceMember,
 )
 from plane.settings.storage import S3Storage
 from plane.utils.path_validator import sanitize_filename
@@ -163,9 +161,7 @@ from plane.utils.openapi import (
     WORKSPACE_NOT_FOUND_RESPONSE,
 )
 from plane.bgtasks.work_item_link_task import crawl_work_item_link_title
-
-
-AI_BOT_ALLOWED_ISSUE_UPDATE_FIELDS = {"description_html", "description_binary", "state"}
+from plane.utils.members import is_ai_agent_user, is_workspace_ai_agent
 
 
 def user_has_issue_permission(user_id, project_id, issue=None, allowed_roles=None, allow_creator=True):
@@ -183,56 +179,18 @@ def user_has_issue_permission(user_id, project_id, issue=None, allowed_roles=Non
     return qs.exists()
 
 
-def is_workspace_ai_agent(user, workspace_slug):
-    return (
-        user.is_authenticated
-        and user.is_bot
-        and user.bot_type == BotTypeEnum.AI_AGENT
-        and WorkspaceMember.objects.filter(
-            workspace__slug=workspace_slug, member=user, role__gte=15, is_active=True
-        ).exists()
+def project_visibility_q(user, workspace_slug):
+    """Queryset filter limiting rows to the user's active projects.
+
+    Workspace AI_AGENT bots are not project members; they may read every
+    project in the workspace, so no membership filter is applied for them.
+    """
+    if is_workspace_ai_agent(user, workspace_slug):
+        return Q()
+    return Q(
+        project__project_projectmember__member=user,
+        project__project_projectmember__is_active=True,
     )
-
-
-def request_updates_only_ai_bot_issue_fields(data):
-    requested_fields = set(data.keys())
-    return bool(requested_fields) and requested_fields.issubset(AI_BOT_ALLOWED_ISSUE_UPDATE_FIELDS)
-
-
-def issue_is_assigned_only_to_user(issue_id, project_id, workspace_slug, user_id):
-    assignee_ids = set(
-        IssueAssignee.objects.filter(
-            issue_id=issue_id,
-            project_id=project_id,
-            workspace__slug=workspace_slug,
-            deleted_at__isnull=True,
-        ).values_list("assignee_id", flat=True)
-    )
-    return assignee_ids == {user_id}
-
-
-class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
-    def has_permission(self, request, view):
-        if super().has_permission(request, view):
-            return True
-
-        if not is_workspace_ai_agent(request.user, view.workspace_slug):
-            return False
-
-        if request.method in SAFE_METHODS:
-            return True
-
-        if request.method != "PATCH":
-            return False
-
-        issue_id = view.kwargs.get("pk")
-        project_id = view.project_id
-        return bool(
-            issue_id
-            and project_id
-            and request_updates_only_ai_bot_issue_fields(request.data)
-            and issue_is_assigned_only_to_user(issue_id, project_id, view.workspace_slug, request.user.id)
-        )
 
 
 class WorkspaceIssueAPIEndpoint(BaseAPIView):
@@ -513,8 +471,18 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
         """
         project = Project.objects.get(pk=project_id)
 
+        data = request.data
+        if is_ai_agent_user(request.user) and not data.get("assignees"):
+            # An AI bot may only create sub work items of its own work items;
+            # keep the new item assigned to the bot unless it delegates explicitly.
+            data = data.copy()
+            if hasattr(data, "setlist"):
+                data.setlist("assignees", [str(request.user.id)])
+            else:
+                data["assignees"] = [str(request.user.id)]
+
         serializer = IssueSerializer(
-            data=request.data,
+            data=data,
             context={
                 "project_id": project_id,
                 "workspace_id": project.workspace_id,
@@ -1174,7 +1142,7 @@ class IssueLinkListCreateAPIEndpoint(BaseAPIView):
 
     serializer_class = IssueLinkSerializer
     model = IssueLink
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotReadOnlyPermission]
     use_read_replica = True
 
     def get_queryset(self):
@@ -1183,8 +1151,7 @@ class IssueLinkListCreateAPIEndpoint(BaseAPIView):
             .filter(project_id=self.kwargs.get("project_id"))
             .filter(issue_id=self.kwargs.get("issue_id"))
             .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
+                project_visibility_q(self.request.user, self.kwargs.get("slug")),
             )
             .filter(project__archived_at__isnull=True)
             .order_by(self.kwargs.get("order_by", "-created_at"))
@@ -1276,7 +1243,7 @@ class IssueLinkListCreateAPIEndpoint(BaseAPIView):
 class IssueLinkDetailAPIEndpoint(BaseAPIView):
     """Issue Link Detail Endpoint"""
 
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotReadOnlyPermission]
 
     model = IssueLink
     serializer_class = IssueLinkSerializer
@@ -1288,8 +1255,7 @@ class IssueLinkDetailAPIEndpoint(BaseAPIView):
             .filter(project_id=self.kwargs.get("project_id"))
             .filter(issue_id=self.kwargs.get("issue_id"))
             .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
+                project_visibility_q(self.request.user, self.kwargs.get("slug")),
             )
             .filter(project__archived_at__isnull=True)
             .order_by(self.kwargs.get("order_by", "-created_at"))
@@ -1422,7 +1388,7 @@ class IssueCommentListCreateAPIEndpoint(BaseAPIView):
     serializer_class = IssueCommentSerializer
     model = IssueComment
     webhook_event = "issue_comment"
-    permission_classes = [ProjectLitePermission]
+    permission_classes = [ProjectLiteOrAIBotCommentPermission]
     use_read_replica = True
 
     def get_queryset(self):
@@ -1431,8 +1397,7 @@ class IssueCommentListCreateAPIEndpoint(BaseAPIView):
             .filter(project_id=self.kwargs.get("project_id"))
             .filter(issue_id=self.kwargs.get("issue_id"))
             .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
+                project_visibility_q(self.request.user, self.kwargs.get("slug")),
             )
             .filter(project__archived_at__isnull=True)
             .select_related("workspace", "project", "issue", "actor")
@@ -1578,7 +1543,7 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
     serializer_class = IssueCommentSerializer
     model = IssueComment
     webhook_event = "issue_comment"
-    permission_classes = [ProjectLitePermission]
+    permission_classes = [ProjectLiteOrAIBotCommentPermission]
     use_read_replica = True
 
     def get_queryset(self):
@@ -1587,8 +1552,7 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
             .filter(project_id=self.kwargs.get("project_id"))
             .filter(issue_id=self.kwargs.get("issue_id"))
             .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
+                project_visibility_q(self.request.user, self.kwargs.get("slug")),
             )
             .filter(project__archived_at__isnull=True)
             .select_related("workspace", "project", "issue", "actor")
@@ -1745,7 +1709,7 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
 
 
 class IssueActivityListAPIEndpoint(BaseAPIView):
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotReadOnlyPermission]
     use_read_replica = True
 
     @issue_activity_docs(
@@ -1780,8 +1744,7 @@ class IssueActivityListAPIEndpoint(BaseAPIView):
             IssueActivity.objects.filter(issue_id=issue_id, workspace__slug=slug, project_id=project_id)
             .filter(
                 ~Q(field__in=["comment", "vote", "reaction", "draft"]),
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
+                project_visibility_q(self.request.user, self.kwargs.get("slug")),
             )
             .filter(project__archived_at__isnull=True)
             .select_related("actor", "workspace", "issue", "project")
@@ -1801,7 +1764,7 @@ class IssueActivityListAPIEndpoint(BaseAPIView):
 class IssueActivityDetailAPIEndpoint(BaseAPIView):
     """Issue Activity Detail Endpoint"""
 
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotReadOnlyPermission]
     use_read_replica = True
 
     @issue_activity_docs(
@@ -1838,8 +1801,7 @@ class IssueActivityDetailAPIEndpoint(BaseAPIView):
                 IssueActivity.objects.filter(issue_id=issue_id, workspace__slug=slug, project_id=project_id, id=pk)
                 .filter(
                     ~Q(field__in=["comment", "vote", "reaction", "draft"]),
-                    project__project_projectmember__member=self.request.user,
-                    project__project_projectmember__is_active=True,
+                    project_visibility_q(self.request.user, self.kwargs.get("slug")),
                 )
                 .filter(project__archived_at__isnull=True)
                 .select_related("actor", "workspace", "issue", "project")
@@ -2335,8 +2297,7 @@ class IssueSearchEndpoint(BaseAPIView):
         # Filter issues
         issues = Issue.issue_objects.filter(
             q,
-            project__project_projectmember__member=self.request.user,
-            project__project_projectmember__is_active=True,
+            project_visibility_q(self.request.user, self.kwargs.get("slug")),
             project__archived_at__isnull=True,
             workspace__slug=slug,
         )
@@ -2363,7 +2324,7 @@ class IssueRelationListCreateAPIEndpoint(BaseAPIView):
 
     serializer_class = IssueRelationSerializer
     model = IssueRelation
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotRelationPermission]
     use_read_replica = True
 
     @work_item_relation_docs(

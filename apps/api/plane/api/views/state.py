@@ -7,14 +7,14 @@ from django.db import IntegrityError
 
 # Third party imports
 from rest_framework import status
-from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 from drf_spectacular.utils import OpenApiResponse, OpenApiRequest
 
 # Module imports
 from plane.api.serializers import StateSerializer
-from plane.app.permissions import ProjectEntityPermission
-from plane.db.models import BotTypeEnum, Issue, State, WorkspaceMember
+from plane.app.permissions import ProjectEntityOrAIBotReadOnlyPermission
+from plane.db.models import Issue, State
+from plane.utils.members import is_workspace_ai_agent
 from .base import BaseAPIView
 from plane.utils.openapi import (
     state_docs,
@@ -37,31 +37,12 @@ from plane.utils.openapi import (
 )
 
 
-def is_workspace_ai_agent(user, workspace_slug):
-    return (
-        user.is_authenticated
-        and user.is_bot
-        and user.bot_type == BotTypeEnum.AI_AGENT
-        and WorkspaceMember.objects.filter(
-            workspace__slug=workspace_slug, member=user, role__gte=15, is_active=True
-        ).exists()
-    )
-
-
-class ProjectEntityOrAIBotReadOnlyStatePermission(ProjectEntityPermission):
-    def has_permission(self, request, view):
-        if super().has_permission(request, view):
-            return True
-
-        return request.method in SAFE_METHODS and is_workspace_ai_agent(request.user, view.workspace_slug)
-
-
 class StateListCreateAPIEndpoint(BaseAPIView):
     """State List and Create Endpoint"""
 
     serializer_class = StateSerializer
     model = State
-    permission_classes = [ProjectEntityOrAIBotReadOnlyStatePermission]
+    permission_classes = [ProjectEntityOrAIBotReadOnlyPermission]
     use_read_replica = True
 
     def get_queryset(self):
@@ -185,7 +166,7 @@ class StateDetailAPIEndpoint(BaseAPIView):
 
     serializer_class = StateSerializer
     model = State
-    permission_classes = [ProjectEntityOrAIBotReadOnlyStatePermission]
+    permission_classes = [ProjectEntityOrAIBotReadOnlyPermission]
     use_read_replica = True
 
     def get_queryset(self):
