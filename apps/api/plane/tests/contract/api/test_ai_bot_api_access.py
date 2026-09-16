@@ -9,6 +9,7 @@ A bot authenticated with its API key can:
 - read every work item, comment, relation and activity in the workspace,
 - update only work items it is assigned to,
 - create sub work items under work items it is assigned to,
+- create unassigned top-level work items that ask a human for an action,
 - comment on any work item and edit only its own comments,
 - add links to work items it is assigned to and edit or delete only its own links,
 - create relations between any work items,
@@ -273,10 +274,51 @@ class TestAIBotWorkItemAccess:
             format="json",
         )
 
+        assigned_to_self = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "Rogue assigned", "assignees": [_bot_id]},
+            format="json",
+        )
+
         assert top_level.status_code == status.HTTP_403_FORBIDDEN
+        assert assigned_to_self.status_code == status.HTTP_403_FORBIDDEN
         assert foreign_child.status_code == status.HTTP_403_FORBIDDEN
         assert bad_parent.status_code == status.HTTP_403_FORBIDDEN
         assert Issue.objects.filter(name__startswith="Rogue").count() == 0
+
+
+    def test_bot_creates_unassigned_ticket_for_humans_that_blocks_its_work_item(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        blocked = _create_issue(project, workspace, state, create_user, "Bot task", [bot_id])
+
+        response = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "Human: choose where the script lives", "assignees": [], "state": str(state.id)},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        ticket = Issue.objects.get(pk=response.data["id"])
+        assert ticket.parent_id is None
+        assert not IssueAssignee.objects.filter(issue=ticket).exists()
+
+        # The bot cannot work on the human ticket it created ...
+        update = bot_client.patch(
+            _v1(workspace.slug, project.id, f"work-items/{ticket.id}/"), {"name": "Taken over"}, format="json"
+        )
+        assert update.status_code == status.HTTP_403_FORBIDDEN
+
+        # ... but it can mark its own work item as blocked by it.
+        relation = bot_client.post(
+            _v1(workspace.slug, project.id, f"work-items/{blocked.id}/relations/"),
+            {"relation_type": "blocked_by", "issues": [str(ticket.id)]},
+            format="json",
+        )
+        assert relation.status_code == status.HTTP_201_CREATED, relation.data
+        assert IssueRelation.objects.filter(issue=blocked, related_issue=ticket, relation_type="blocked_by").exists()
 
 
 @pytest.mark.contract

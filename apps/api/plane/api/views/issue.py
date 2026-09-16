@@ -473,9 +473,10 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
         project = Project.objects.get(pk=project_id)
 
         data = request.data
-        if is_ai_agent_user(request.user) and not data.get("assignees"):
-            # An AI bot may only create sub work items of its own work items;
-            # keep the new item assigned to the bot unless it delegates explicitly.
+        if is_ai_agent_user(request.user) and "assignees" not in data:
+            # An AI bot creates sub work items of its own work items; keep the
+            # new item assigned to the bot unless it sets assignees explicitly
+            # (an empty list leaves a ticket for humans unassigned).
             data = data.copy()
             if hasattr(data, "setlist"):
                 data.setlist("assignees", [str(request.user.id)])

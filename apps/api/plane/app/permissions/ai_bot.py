@@ -47,12 +47,21 @@ class ProjectEntityOrAIBotReadOnlyPermission(ProjectEntityPermission):
         return request.method in SAFE_METHODS and is_workspace_ai_agent(request.user, view.workspace_slug)
 
 
+def _requests_unassigned(data):
+    """True when the request body explicitly sets ``assignees`` to an empty list."""
+    if hasattr(data, "getlist"):
+        return "assignees" in data and not [value for value in data.getlist("assignees") if value]
+    return "assignees" in data and data.get("assignees") == []
+
+
 class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
     """Project members keep full access.
 
     AI bots may read every work item, ``PATCH`` work items they are assigned to,
-    and ``POST`` new work items only as children (``parent``) of work items they
-    are assigned to.
+    and ``POST`` new work items either as children (``parent``) of work items they
+    are assigned to, or as unassigned top-level work items (``assignees`` given
+    explicitly as an empty list) that ask a human for a decision or an action.
+    Such tickets are never assigned to the bot, so the bot cannot work on them.
     """
 
     def has_permission(self, request, view):
@@ -77,6 +86,8 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
 
         if request.method == "POST":
             parent_id = request.data.get("parent")
+            if parent_id is None and _requests_unassigned(request.data):
+                return True
             return bool(
                 parent_id
                 and _is_uuid(parent_id)
