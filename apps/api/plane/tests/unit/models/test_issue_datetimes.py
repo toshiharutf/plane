@@ -176,6 +176,34 @@ class TestIssueStartTargetDatetimes:
         assert issue.start_datetime == start
         assert issue.target_datetime >= start
 
+    def test_completed_without_start_uses_created_at(self, issue, states):
+        # Tickets for humans go straight from Todo to Done without a started state
+        issue.state = states["completed"]
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_datetime == issue.created_at.replace(microsecond=0)
+        assert issue.start_date == issue.start_datetime.astimezone(__import__("zoneinfo").ZoneInfo("Asia/Tokyo")).date()
+        assert issue.target_datetime is not None and issue.start_datetime <= issue.target_datetime
+
+    def test_create_in_completed_state_sets_start_and_target(self, project, states):
+        created = Issue.objects.create(
+            name="Done", project=project, workspace=project.workspace, state=states["completed"]
+        )
+        created.refresh_from_db()
+        assert created.start_datetime is not None and created.target_datetime is not None
+        assert created.start_datetime <= created.target_datetime
+
+    def test_explicit_empty_start_with_completed_state_stays_empty(self, issue, states):
+        issue.start_datetime = timezone.now() - timedelta(days=1)
+        issue.save()
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.state = states["completed"]
+        issue.start_datetime = None
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_datetime is None and issue.start_date is None
+        assert issue.target_datetime is not None
+
     def test_explicit_target_with_completed_state_wins(self, issue, states):
         explicit = datetime(2026, 2, 3, 18, 45, 10, tzinfo=dt_timezone.utc)
         issue.state = states["completed"]

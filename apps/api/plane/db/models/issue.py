@@ -385,7 +385,13 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
                 if not self._field_changed("target_datetime"):
                     self._set_moment("target_date", "target_datetime", now)
                     changed |= {"target_date", "target_datetime"}
-                    if (self.start_datetime and self.start_datetime > now) or (
+                    if self.start_datetime is None and not self._field_changed("start_datetime"):
+                        # Closed without passing through a started state (e.g. tickets for humans):
+                        # the item has been open since it was created
+                        created_at = self.created_at.replace(microsecond=0) if self.created_at else now
+                        self._set_moment("start_date", "start_datetime", min(created_at, now))
+                        changed |= {"start_date", "start_datetime"}
+                    elif (self.start_datetime and self.start_datetime > now) or (
                         self.start_date and self.start_date > self.target_date
                     ):
                         self._set_moment("start_date", "start_datetime", None)
