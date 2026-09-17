@@ -50,6 +50,7 @@ export type TBaseIssue = {
 
   state_id: string | null;
   priority: TIssuePriorities | null;
+  ai_model?: string;
   label_ids: string[];
   assignee_ids: string[];
   estimate_point: string | null;

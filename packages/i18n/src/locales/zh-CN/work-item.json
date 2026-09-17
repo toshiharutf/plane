@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AI 模型",
+      "no_results": "没有匹配的模型"
+    },
     "ai_usage": {
       "input_tokens": "输入 token",
       "output_tokens": "输出 token",

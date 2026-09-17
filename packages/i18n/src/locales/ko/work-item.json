@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AI 모델",
+      "no_results": "일치하는 모델이 없습니다"
+    },
     "ai_usage": {
       "input_tokens": "입력 토큰",
       "output_tokens": "출력 토큰",

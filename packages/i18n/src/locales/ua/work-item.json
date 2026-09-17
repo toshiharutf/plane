@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Модель AI",
+      "no_results": "Немає відповідних моделей"
+    },
     "ai_usage": {
       "input_tokens": "Вхідні токени",
       "output_tokens": "Вихідні токени",

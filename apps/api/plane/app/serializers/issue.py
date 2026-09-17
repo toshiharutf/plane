@@ -798,6 +798,7 @@ class IssueSerializer(DynamicBaseSerializer):
             "completed_at",
             "estimate_point",
             "priority",
+            "ai_model",
             "start_date",
             "target_date",
             "start_datetime",

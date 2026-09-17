@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Model AI",
+      "no_results": "Žádné odpovídající modely"
+    },
     "ai_usage": {
       "input_tokens": "Vstupní tokeny",
       "output_tokens": "Výstupní tokeny",

@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Model AI",
+      "no_results": "Tidak ada model yang cocok"
+    },
     "ai_usage": {
       "input_tokens": "Token input",
       "output_tokens": "Token output",

@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AI modeli",
+      "no_results": "Eşleşen model yok"
+    },
     "ai_usage": {
       "input_tokens": "Girdi token'ları",
       "output_tokens": "Çıktı token'ları",

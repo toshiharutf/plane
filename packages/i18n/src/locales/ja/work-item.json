@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AIモデル",
+      "no_results": "一致するモデルがありません"
+    },
     "ai_usage": {
       "input_tokens": "入力トークン",
       "output_tokens": "出力トークン",

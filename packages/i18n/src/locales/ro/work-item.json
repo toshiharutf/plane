@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Model AI",
+      "no_results": "Niciun model potrivit"
+    },
     "ai_usage": {
       "input_tokens": "Tokenuri de intrare",
       "output_tokens": "Tokenuri de ieșire",

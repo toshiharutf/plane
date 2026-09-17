@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "Mô hình AI",
+      "no_results": "Không có mô hình phù hợp"
+    },
     "ai_usage": {
       "input_tokens": "Token đầu vào",
       "output_tokens": "Token đầu ra",

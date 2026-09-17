@@ -1,5 +1,9 @@
 {
   "issue": {
+    "ai_model": {
+      "label": "AI-Modell",
+      "no_results": "Keine passenden Modelle"
+    },
     "ai_usage": {
       "input_tokens": "Eingabe-Tokens",
       "output_tokens": "Ausgabe-Tokens",
