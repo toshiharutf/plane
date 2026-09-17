@@ -10,6 +10,7 @@ A bot authenticated with its API key can:
 - update only work items it is assigned to,
 - create sub work items under work items it is assigned to,
 - create unassigned top-level work items that ask a human for an action,
+- create top-level ``[Release] - <branch>`` work items assigned only to itself,
 - comment on any work item and edit only its own comments,
 - add links to work items it is assigned to and edit or delete only its own links,
 - create relations between any work items,
@@ -286,7 +287,6 @@ class TestAIBotWorkItemAccess:
         assert bad_parent.status_code == status.HTTP_403_FORBIDDEN
         assert Issue.objects.filter(name__startswith="Rogue").count() == 0
 
-
     def test_bot_creates_unassigned_ticket_for_humans_that_blocks_its_work_item(
         self, workspace, project, state, create_user, bot, monkeypatch
     ):
@@ -319,6 +319,82 @@ class TestAIBotWorkItemAccess:
         )
         assert relation.status_code == status.HTTP_201_CREATED, relation.data
         assert IssueRelation.objects.filter(issue=blocked, related_issue=ticket, relation_type="blocked_by").exists()
+
+    def test_bot_creates_release_item_assigned_to_itself_with_sub_work_items(
+        self, session_client, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+
+        implicit = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "[Release] - develop", "state": str(state.id)},
+            format="json",
+        )
+        explicit = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "[Release] - main", "assignees": [bot_id]},
+            format="json",
+        )
+
+        assert implicit.status_code == status.HTTP_201_CREATED, implicit.data
+        assert explicit.status_code == status.HTTP_201_CREATED, explicit.data
+        release = Issue.objects.get(pk=implicit.data["id"])
+        assert release.parent_id is None
+        assignees = IssueAssignee.objects.filter(issue=release).values_list("assignee_id", flat=True)
+        assert {str(assignee) for assignee in assignees} == {bot_id}
+
+        # The bot works on its release item: state changes and sub work items.
+        update = bot_client.patch(
+            _v1(workspace.slug, project.id, f"work-items/{release.id}/"),
+            {"name": "[Release] - develop"},
+            format="json",
+        )
+        child = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "Local testing", "parent": str(release.id)},
+            format="json",
+        )
+        human_child = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {
+                "name": "[Human] permission to push to git remote and deploy to vps",
+                "parent": str(release.id),
+                "assignees": [],
+            },
+            format="json",
+        )
+        assert update.status_code == status.HTTP_200_OK
+        assert child.status_code == status.HTTP_201_CREATED, child.data
+        assert human_child.status_code == status.HTTP_201_CREATED, human_child.data
+        assert not IssueAssignee.objects.filter(issue_id=human_child.data["id"]).exists()
+        # The approval sub work item stays out of the bot's reach.
+        approve = bot_client.patch(
+            _v1(workspace.slug, project.id, f"work-items/{human_child.data['id']}/"),
+            {"name": "approved"},
+            format="json",
+        )
+        assert approve.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_bot_cannot_create_release_items_for_others_or_other_top_level_work(
+        self, session_client, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        other_bot_id, _other_client = _create_bot(session_client, workspace, "Helper AI")
+        cases = [
+            {"name": "[Release] - develop", "assignees": [str(create_user.id)]},
+            {"name": "[Release] - develop", "assignees": [other_bot_id]},
+            {"name": "[Release] - develop", "assignees": [bot_id, str(create_user.id)]},
+            {"name": "[release] - develop", "assignees": [bot_id]},
+            {"name": "Rogue [Release] - develop", "assignees": [bot_id]},
+            {"name": "[Release] develop"},
+        ]
+        for body in cases:
+            response = bot_client.post(_v1(workspace.slug, project.id, "work-items/"), body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+
+        assert Issue.objects.filter(name__icontains="release").count() == 0
 
 
 @pytest.mark.contract

@@ -9,8 +9,10 @@ Human users keep the exact behaviour of the base permission class. A workspace
 with role >= member) authenticated through an API key gets an additional,
 narrower set of rights:
 
-- Work items: read everything, update only work items it is assigned to, and
-  create sub work items under work items it is assigned to.
+- Work items: read everything, update only work items it is assigned to,
+  create sub work items under work items it is assigned to, create unassigned
+  top-level tickets for humans, and create top-level ``[Release] - <branch>``
+  work items assigned to itself (release tracking by the orchestrator).
 - Comments: read and create on any work item, update or delete only its own.
 - Links: read everything, create only on work items it is assigned to, and
   update or delete only links it created.
@@ -55,6 +57,24 @@ def _requests_unassigned(data):
     return "assignees" in data and data.get("assignees") == []
 
 
+RELEASE_ITEM_PREFIX = "[Release] - "
+
+
+def _requests_own_release_item(data, user_id):
+    """True for a top-level ``[Release] - <branch>`` work item that stays assigned to the bot alone.
+
+    Without ``assignees`` the create view assigns the bot; an explicit list must be exactly the bot.
+    """
+    if not str(data.get("name") or "").startswith(RELEASE_ITEM_PREFIX):
+        return False
+    if "assignees" not in data:
+        return True
+    values = data.getlist("assignees") if hasattr(data, "getlist") else data.get("assignees")
+    if not isinstance(values, (list, tuple)):
+        return False
+    return [str(value) for value in values if value] == [str(user_id)]
+
+
 class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
     """Project members keep full access.
 
@@ -63,6 +83,8 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
     are assigned to, or as unassigned top-level work items (``assignees`` given
     explicitly as an empty list) that ask a human for a decision or an action.
     Such tickets are never assigned to the bot, so the bot cannot work on them.
+    The one exception to "no top-level work for itself" is a ``[Release] - <branch>``
+    work item assigned only to the bot, which traces a release cycle.
     """
 
     def has_permission(self, request, view):
@@ -87,7 +109,9 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
 
         if request.method == "POST":
             parent_id = request.data.get("parent")
-            if parent_id is None and _requests_unassigned(request.data):
+            if parent_id is None and (
+                _requests_unassigned(request.data) or _requests_own_release_item(request.data, request.user.id)
+            ):
                 return True
             return bool(
                 parent_id
