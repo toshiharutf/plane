@@ -3,6 +3,7 @@
 # See the LICENSE file for details.
 
 from datetime import date, datetime, timedelta, timezone as dt_timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.utils import timezone
@@ -87,7 +88,7 @@ class TestIssueStartTargetDatetimes:
         issue.save()
         issue.refresh_from_db()
         assert issue.start_datetime is not None and issue.start_datetime >= before
-        assert issue.start_date == issue.start_datetime.astimezone(__import__("zoneinfo").ZoneInfo("Asia/Tokyo")).date()
+        assert issue.start_date == issue.start_datetime.astimezone(ZoneInfo("Asia/Tokyo")).date()
         assert issue.target_datetime is None
 
     def test_moving_between_started_states_keeps_start(self, issue, states):
@@ -182,7 +183,7 @@ class TestIssueStartTargetDatetimes:
         issue.save()
         issue.refresh_from_db()
         assert issue.start_datetime == issue.created_at.replace(microsecond=0)
-        assert issue.start_date == issue.start_datetime.astimezone(__import__("zoneinfo").ZoneInfo("Asia/Tokyo")).date()
+        assert issue.start_date == issue.start_datetime.astimezone(ZoneInfo("Asia/Tokyo")).date()
         assert issue.target_datetime is not None and issue.start_datetime <= issue.target_datetime
 
     def test_create_in_completed_state_sets_start_and_target(self, project, states):
