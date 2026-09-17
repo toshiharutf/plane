@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "Analitik",
     "page_label": "{workspace} - Analitik",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "AI kullanımı",
+      "description": "Tamamlanan her iş öğesi için kullanılan token sayısı, her AI modeli için tüm oturumlarda toplanır.",
+      "work_item": "İş öğesi",
+      "tokens": "Token",
+      "input_tokens": "Giriş tokenları",
+      "output_tokens": "Çıkış tokenları",
+      "cache_miss": "Giriş önbelleği (ıskalama)",
+      "cache_hit": "Giriş önbelleği (isabet)",
+      "empty_state": "Tamamlanan iş öğeleri için henüz AI kullanımı bildirilmedi."
+    },
     "open_tasks": "Toplam açık görev",
     "error": "Veri alınırken bir hata oluştu.",
     "work_items_closed_in": "Kapanan iş öğeleri",

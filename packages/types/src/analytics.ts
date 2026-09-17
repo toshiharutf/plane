@@ -38,9 +38,11 @@ export enum ChartYAxisMetric {
 }
 
 export type TAnalyticsTabsBase = "overview" | "work-items";
+// All analytics tabs; "ai" reads the ai-usage endpoint instead of advance-analytics.
+export type TAnalyticsTabKey = TAnalyticsTabsBase | "ai";
 export type TAnalyticsGraphsBase = "projects" | "work-items" | "custom-work-items";
 export interface AnalyticsTab {
-  key: TAnalyticsTabsBase;
+  key: TAnalyticsTabKey;
   label: string;
   content: React.FC;
   isDisabled: boolean;
@@ -94,3 +96,31 @@ export interface IAnalyticsParams {
   y_axis: ChartYAxisMetric;
   group_by?: ChartXAxisProperty;
 }
+
+// AI usage analytics
+
+export type TAIUsageTokenMetrics = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+};
+
+export type TAIUsageWorkItem = TAIUsageTokenMetrics & {
+  id: string;
+  project_id: string;
+  sequence_id: number;
+  project_identifier: string;
+  name: string;
+  completed_at: string | null;
+};
+
+export type TAIUsageModel = {
+  model: string;
+  work_items: TAIUsageWorkItem[];
+  totals: TAIUsageTokenMetrics;
+};
+
+export type TAIUsageAnalyticsResponse = {
+  models: TAIUsageModel[];
+};

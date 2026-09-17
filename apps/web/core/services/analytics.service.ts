@@ -11,6 +11,7 @@ import type {
   TAnalyticsTabsBase,
   TAnalyticsGraphsBase,
   TAnalyticsFilterParams,
+  TAIUsageAnalyticsResponse,
 } from "@plane/types";
 // services
 import { APIService } from "./api.service";
@@ -82,6 +83,17 @@ export class AnalyticsService extends APIService {
         ...params,
       },
     })
+      .then((res) => res?.data)
+      .catch((err) => {
+        throw err?.response?.data;
+      });
+  }
+
+  async getAIUsageAnalytics(
+    workspaceSlug: string,
+    params?: Pick<TAnalyticsFilterParams, "project_ids">
+  ): Promise<TAIUsageAnalyticsResponse> {
+    return this.get(`/api/workspaces/${workspaceSlug}/analytics/ai-usage/`, { params })
       .then((res) => res?.data)
       .catch((err) => {
         throw err?.response?.data;

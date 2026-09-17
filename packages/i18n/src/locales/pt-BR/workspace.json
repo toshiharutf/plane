@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "Análises",
     "page_label": "{workspace} - Análises",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "Uso de AI",
+      "description": "Tokens usados por item concluído, somados em todas as sessões para cada modelo de AI.",
+      "work_item": "Item",
+      "tokens": "Tokens",
+      "input_tokens": "Tokens de entrada",
+      "output_tokens": "Tokens de saída",
+      "cache_miss": "Cache de entrada (miss)",
+      "cache_hit": "Cache de entrada (hit)",
+      "empty_state": "Nenhum uso de AI foi registrado para itens concluídos ainda."
+    },
     "open_tasks": "Total de tarefas abertas",
     "error": "Ocorreu algum erro ao buscar os dados.",
     "work_items_closed_in": "Itens de trabalho fechados em",

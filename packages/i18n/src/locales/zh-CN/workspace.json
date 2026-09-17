@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "分析",
     "page_label": "{workspace} - 分析",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "AI 用量",
+      "description": "每个已完成工作项使用的 Token，按每个 AI 模型汇总所有会话。",
+      "work_item": "工作项",
+      "tokens": "Token",
+      "input_tokens": "输入 Token",
+      "output_tokens": "输出 Token",
+      "cache_miss": "输入缓存（未命中）",
+      "cache_hit": "输入缓存（命中）",
+      "empty_state": "已完成的工作项尚未报告 AI 用量。"
+    },
     "open_tasks": "总开放任务",
     "error": "获取数据时出现错误。",
     "work_items_closed_in": "已关闭的工作项",

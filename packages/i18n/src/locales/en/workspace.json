@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "Analytics",
     "page_label": "{workspace} - Analytics",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "AI usage",
+      "description": "Tokens used per completed work item, summed over all sessions for each AI model.",
+      "work_item": "Work item",
+      "tokens": "Tokens",
+      "input_tokens": "Input tokens",
+      "output_tokens": "Output tokens",
+      "cache_miss": "Input cache (miss)",
+      "cache_hit": "Input cache (hit)",
+      "empty_state": "No AI usage has been reported for completed work items yet."
+    },
     "open_tasks": "Total open tasks",
     "error": "There was some error in fetching the data.",
     "work_items_closed_in": "Work items closed in",

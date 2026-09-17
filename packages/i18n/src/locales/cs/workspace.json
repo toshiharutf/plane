@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "Analytika",
     "page_label": "{workspace} - Analytika",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "Využití AI",
+      "description": "Tokeny použité na každou dokončenou pracovní položku, sečtené za všechny relace pro každý model AI.",
+      "work_item": "Pracovní položka",
+      "tokens": "Tokeny",
+      "input_tokens": "Vstupní tokeny",
+      "output_tokens": "Výstupní tokeny",
+      "cache_miss": "Vstupní cache (miss)",
+      "cache_hit": "Vstupní cache (hit)",
+      "empty_state": "Pro dokončené pracovní položky zatím nebylo nahlášeno žádné využití AI."
+    },
     "open_tasks": "Celkem otevřených úkolů",
     "error": "Při načítání dat došlo k chybě.",
     "work_items_closed_in": "Pracovní položky uzavřené v",

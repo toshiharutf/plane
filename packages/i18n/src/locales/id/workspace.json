@@ -68,6 +68,18 @@
   "workspace_analytics": {
     "label": "Analitik",
     "page_label": "{workspace} - Analitik",
+    "ai_usage": {
+      "tab": "AI",
+      "title": "Penggunaan AI",
+      "description": "Token yang digunakan per item kerja yang selesai, dijumlahkan dari semua sesi untuk setiap model AI.",
+      "work_item": "Item kerja",
+      "tokens": "Token",
+      "input_tokens": "Token input",
+      "output_tokens": "Token output",
+      "cache_miss": "Cache input (miss)",
+      "cache_hit": "Cache input (hit)",
+      "empty_state": "Belum ada penggunaan AI yang dilaporkan untuk item kerja yang selesai."
+    },
     "open_tasks": "Jumlah tugas terbuka",
     "error": "Terjadi kesalahan dalam mengambil data.",
     "work_items_closed_in": "Item kerja yang ditutup dalam",
