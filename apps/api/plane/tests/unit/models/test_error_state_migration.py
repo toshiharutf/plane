@@ -114,6 +114,17 @@ class TestAddErrorStateMigration:
         assert error.group == "started"
         assert error.sequence == 40000
 
+    def test_project_with_triage_state(self, workspace, create_user):
+        project = make_project(workspace, create_user, "ERRI", DEFAULTS)
+        State.all_state_objects.create(name="Triage", group="triage", project=project, workspace=workspace)
+        State.all_state_objects.filter(project=project, name="Triage").update(sequence=65000)
+
+        migration.add_error_state(apps, None)
+
+        assert State.objects.get(project=project, name="Error").sequence == 40000
+        triage = State.triage_objects.get(project=project)
+        assert (triage.name, triage.sequence) == ("Triage", 65000)
+
     def test_project_without_states(self, workspace, create_user):
         project = make_project(workspace, create_user, "ERRH", [])
 
