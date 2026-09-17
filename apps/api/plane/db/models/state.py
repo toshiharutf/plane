@@ -20,6 +20,8 @@ class StateGroup(models.TextChoices):
     TRIAGE = "triage", "Triage"
 
 
+ERROR_STATE_NAME = "Error"
+
 # Default states
 DEFAULT_STATES = [
     {
@@ -39,6 +41,13 @@ DEFAULT_STATES = [
         "name": "In Progress",
         "color": "#F59E0B",
         "sequence": 35000,
+        "group": StateGroup.STARTED.value,
+    },
+    {
+        # Set by the agent orchestrator when a run fails; still open, so blocked items stay blocked
+        "name": ERROR_STATE_NAME,
+        "color": "#E5484D",
+        "sequence": 40000,
         "group": StateGroup.STARTED.value,
     },
     {
