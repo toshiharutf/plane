@@ -10,7 +10,16 @@ import pytest
 from django.utils import timezone
 from rest_framework import status
 
-from plane.db.models import Issue, Project, ProjectMember, State, User, WorkItemAIUsage, WorkspaceMember
+from plane.db.models import (
+    Issue,
+    Project,
+    ProjectMember,
+    State,
+    User,
+    WorkItemAIUsage,
+    Workspace,
+    WorkspaceMember,
+)
 
 
 URL = "/api/workspaces/{slug}/analytics/ai-usage/"
@@ -143,6 +152,92 @@ class TestAIUsageAnalytics:
 
         filtered = _by_model(session_client.get(URL.format(slug=workspace.slug), {"project_ids": str(second.id)}))
         assert [item["id"] for item in filtered["claude-opus-5"]["work_items"]] == [second_issue.id]
+
+    def test_items_without_completed_at_go_last(self, session_client, workspace, project, done, create_user):
+        untracked = _issue(project, done, create_user, "Untracked")
+        Issue.objects.filter(id=untracked.id).update(completed_at=None)
+        tracked = _issue(project, done, create_user, "Tracked", completed_at=timezone.now())
+        for issue in (untracked, tracked):
+            _usage(issue, "claude-opus-5", output_tokens=1)
+
+        models = _by_model(session_client.get(URL.format(slug=workspace.slug)))
+
+        items = models["claude-opus-5"]["work_items"]
+        assert [item["id"] for item in items] == [tracked.id, untracked.id]
+        assert items[1]["completed_at"] is None
+
+    def test_totals_sum_all_work_items_of_a_model(self, session_client, workspace, project, done, create_user):
+        first = _issue(project, done, create_user, "First")
+        second = _issue(project, done, create_user, "Second")
+        _usage(first, "claude-opus-5", input_tokens=1, output_tokens=2, cache_creation_input_tokens=3)
+        _usage(second, "claude-opus-5", input_tokens=10, cache_read_input_tokens=40)
+        _usage(second, "claude-sonnet-5", output_tokens=7)
+
+        models = _by_model(session_client.get(URL.format(slug=workspace.slug)))
+
+        assert len(models["claude-opus-5"]["work_items"]) == 2
+        assert models["claude-opus-5"]["totals"] == {
+            "input_tokens": 11,
+            "output_tokens": 2,
+            "cache_creation_input_tokens": 3,
+            "cache_read_input_tokens": 40,
+        }
+        assert models["claude-sonnet-5"]["totals"]["output_tokens"] == 7
+
+    def test_excludes_drafts_deleted_items_and_archived_projects(
+        self, session_client, workspace, project, done, create_user
+    ):
+        draft = _issue(project, done, create_user, "Draft")
+        Issue.objects.filter(id=draft.id).update(is_draft=True)
+        deleted = _issue(project, done, create_user, "Deleted")
+        Issue.objects.filter(id=deleted.id).update(deleted_at=timezone.now())
+        archived_project = _project(workspace, create_user, "Archived project", "ARC")
+        archived_done = State.objects.create(
+            name="Done", group="completed", project=archived_project, workspace=workspace
+        )
+        in_archived_project = _issue(archived_project, archived_done, create_user, "In archived project")
+        Project.objects.filter(id=archived_project.id).update(archived_at=timezone.now())
+        kept = _issue(project, done, create_user, "Kept")
+        for issue in (draft, deleted, in_archived_project, kept):
+            _usage(issue, "claude-opus-5", input_tokens=5)
+
+        models = _by_model(session_client.get(URL.format(slug=workspace.slug)))
+
+        assert [item["id"] for item in models["claude-opus-5"]["work_items"]] == [kept.id]
+        assert models["claude-opus-5"]["totals"]["input_tokens"] == 5
+
+    def test_multiple_project_ids_and_inactive_membership(self, session_client, workspace, project, done, create_user):
+        mine = _issue(project, done, create_user, "Mine")
+        _usage(mine, "claude-opus-5", input_tokens=1)
+        second = _project(workspace, create_user, "Second", "SEC")
+        second_done = State.objects.create(name="Done", group="completed", project=second, workspace=workspace)
+        second_issue = _issue(second, second_done, create_user, "Second")
+        _usage(second_issue, "claude-opus-5", input_tokens=1)
+        left = _project(workspace, create_user, "Left", "LFT")
+        left_done = State.objects.create(name="Done", group="completed", project=left, workspace=workspace)
+        _usage(_issue(left, left_done, create_user, "Left"), "claude-opus-5", input_tokens=1)
+        ProjectMember.objects.filter(project=left, member=create_user).update(is_active=False)
+
+        both = _by_model(
+            session_client.get(URL.format(slug=workspace.slug), {"project_ids": f"{project.id},{second.id},{left.id}"})
+        )
+
+        assert {item["id"] for item in both["claude-opus-5"]["work_items"]} == {mine.id, second_issue.id}
+
+    def test_other_workspaces_are_not_included(self, session_client, workspace, project, done, create_user):
+        other_workspace = Workspace.objects.create(name="Other Workspace", owner=create_user, slug="other-ai-usage")
+        WorkspaceMember.objects.create(workspace=other_workspace, member=create_user, role=20)
+        other_project = _project(other_workspace, create_user, "Elsewhere", "ELS")
+        other_done = State.objects.create(
+            name="Done", group="completed", project=other_project, workspace=other_workspace
+        )
+        _usage(_issue(other_project, other_done, create_user, "Elsewhere"), "claude-opus-5", input_tokens=9)
+        mine = _issue(project, done, create_user, "Mine")
+        _usage(mine, "claude-opus-5", input_tokens=1)
+
+        models = _by_model(session_client.get(URL.format(slug=workspace.slug)))
+
+        assert [item["id"] for item in models["claude-opus-5"]["work_items"]] == [mine.id]
 
     def test_empty_response(self, session_client, workspace, project):
         response = session_client.get(URL.format(slug=workspace.slug))
