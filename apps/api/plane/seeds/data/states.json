@@ -27,6 +27,15 @@
     "project_id": 1
   },
   {
+    "id": 6,
+    "name": "Error",
+    "color": "#E5484D",
+    "sequence": 40000,
+    "group": "started",
+    "default": false,
+    "project_id": 1
+  },
+  {
     "id": 4,
     "name": "Done",
     "color": "#16A34A",
