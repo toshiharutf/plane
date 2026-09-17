@@ -396,6 +396,81 @@ class TestAIBotWorkItemAccess:
 
         assert Issue.objects.filter(name__icontains="release").count() == 0
 
+    def test_release_name_does_not_widen_sub_work_item_or_assignee_rules(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        human = _create_issue(project, workspace, state, create_user, "Human epic", [str(create_user.id)])
+        cases = [
+            # A release name gives no access to a parent the bot is not assigned to.
+            {"name": "[Release] - develop", "parent": str(human.id)},
+            {"name": "[Release] - develop", "parent": str(human.id), "assignees": [bot_id]},
+            {"name": "[Release] - develop", "parent": "not-a-uuid"},
+            {"name": "[Release] - develop", "parent": ""},
+            # ``assignees`` must be a list holding the bot alone.
+            {"name": "[Release] - develop", "assignees": bot_id},
+            {"name": "[Release] - develop", "assignees": None},
+            {"name": "[Release] - develop", "assignees": [bot_id, bot_id]},
+        ]
+        for body in cases:
+            response = bot_client.post(_v1(workspace.slug, project.id, "work-items/"), body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+
+        assert Issue.objects.filter(name__icontains="release").count() == 0
+
+    def test_bot_creates_release_item_from_form_data_and_unassigned_release_named_ticket(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+
+        implicit = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"), {"name": "[Release] - develop"}, format="multipart"
+        )
+        explicit = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "[Release] - main", "assignees": [bot_id]},
+            format="multipart",
+        )
+        foreign = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "[Release] - hotfix", "assignees": [bot_id, str(create_user.id)]},
+            format="multipart",
+        )
+        # An explicit empty list stays the unassigned ticket for humans, whatever its name.
+        unassigned = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "[Release] - staging", "assignees": []},
+            format="json",
+        )
+
+        assert implicit.status_code == status.HTTP_201_CREATED, implicit.data
+        assert explicit.status_code == status.HTTP_201_CREATED, explicit.data
+        assert foreign.status_code == status.HTTP_403_FORBIDDEN
+        assert unassigned.status_code == status.HTTP_201_CREATED, unassigned.data
+        for response in (implicit, explicit):
+            assignees = IssueAssignee.objects.filter(issue_id=response.data["id"]).values_list("assignee_id", flat=True)
+            assert {str(assignee) for assignee in assignees} == {bot_id}
+        assert not IssueAssignee.objects.filter(issue_id=unassigned.data["id"]).exists()
+        assert not Issue.objects.filter(name="[Release] - hotfix").exists()
+
+    def test_human_creates_release_named_work_item_for_anyone(
+        self, workspace, project, state, create_user, human_client, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, _bot_client = bot
+
+        response = human_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "[Release] - develop", "assignees": [str(create_user.id), bot_id]},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assignees = IssueAssignee.objects.filter(issue_id=response.data["id"]).values_list("assignee_id", flat=True)
+        assert {str(assignee) for assignee in assignees} == {str(create_user.id), bot_id}
+
 
 @pytest.mark.contract
 @pytest.mark.django_db
