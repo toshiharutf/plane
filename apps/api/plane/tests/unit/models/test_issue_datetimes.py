@@ -205,6 +205,52 @@ class TestIssueStartTargetDatetimes:
         assert issue.start_datetime is None and issue.start_date is None
         assert issue.target_datetime is not None
 
+    def test_completed_without_start_uses_older_created_at(self, issue, states):
+        created_at = timezone.now() - timedelta(days=3, hours=5)
+        Issue.objects.filter(pk=issue.pk).update(created_at=created_at)
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.state = states["completed"]
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_datetime == created_at.replace(microsecond=0)
+        assert issue.start_date == issue.start_datetime.astimezone(ZoneInfo("Asia/Tokyo")).date()
+        assert issue.target_datetime - issue.start_datetime >= timedelta(days=3)
+        assert issue.start_date < issue.target_date
+
+    def test_completed_without_start_replaces_future_target(self, issue, states):
+        # A deadline in the future becomes the close time; the start is still filled
+        issue.target_datetime = timezone.now() + timedelta(days=7)
+        issue.save()
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.state = states["completed"]
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.target_datetime <= timezone.now()
+        assert issue.start_datetime == issue.created_at.replace(microsecond=0)
+        assert issue.start_datetime <= issue.target_datetime and issue.start_date <= issue.target_date
+
+    def test_completed_without_start_update_fields_include_start(self, issue, states):
+        issue.state = states["completed"]
+        issue.save(update_fields=["state"])
+        issue.refresh_from_db()
+        assert issue.start_datetime is not None and issue.start_date is not None
+        assert issue.target_datetime is not None and issue.target_date is not None
+
+    def test_completed_again_keeps_first_start(self, issue, states):
+        issue.state = states["completed"]
+        issue.save()
+        first_start = Issue.objects.get(pk=issue.pk).start_datetime
+        assert first_start is not None
+        Issue.objects.filter(pk=issue.pk).update(created_at=timezone.now() - timedelta(days=2))
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.state = states["backlog"]
+        issue.save()
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.state = states["completed"]
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_datetime == first_start
+
     def test_explicit_target_with_completed_state_wins(self, issue, states):
         explicit = datetime(2026, 2, 3, 18, 45, 10, tzinfo=dt_timezone.utc)
         issue.state = states["completed"]

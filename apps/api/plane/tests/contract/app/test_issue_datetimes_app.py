@@ -91,6 +91,41 @@ class TestIssueDatetimesAppAPI:
         assert listed.status_code == 200
 
     @pytest.mark.django_db
+    def test_closing_unstarted_item_fills_start_from_created_at(self, session_client, issue, states):
+        # Tickets for humans are closed straight from Todo/Backlog to Done
+        url = _app_url(issue)
+        assert session_client.patch(url, {"state_id": str(states["completed"].id)}, format="json").status_code == 204
+        data = session_client.get(url).data
+        assert data["start_datetime"] is not None and data["target_datetime"] is not None
+        assert data["start_date"] is not None and data["target_date"] is not None
+        issue.refresh_from_db()
+        assert issue.start_datetime == issue.created_at.replace(microsecond=0)
+        assert issue.start_datetime <= issue.target_datetime
+
+    @pytest.mark.django_db
+    def test_closing_with_explicit_empty_start_keeps_it_empty(self, session_client, issue, states):
+        url = _app_url(issue)
+        assert session_client.patch(url, {"start_datetime": "2026-04-01T09:15:30Z"}, format="json").status_code == 204
+        response = session_client.patch(
+            url, {"state_id": str(states["completed"].id), "start_datetime": None}, format="json"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT, response.data
+        issue.refresh_from_db()
+        assert issue.start_datetime is None and issue.start_date is None
+        assert issue.target_datetime is not None
+
+    @pytest.mark.django_db
+    def test_v1_api_closing_unstarted_item_fills_start(self, api_key_client, issue, states):
+        url = _v1_url(issue)
+        response = api_key_client.patch(url, {"state": str(states["completed"].id)}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+        assert response.data["start_datetime"] is not None and response.data["target_datetime"] is not None
+        data = api_key_client.get(url).data
+        assert str(data["start_date"]) <= str(data["target_date"])
+        issue.refresh_from_db()
+        assert issue.start_datetime == issue.created_at.replace(microsecond=0)
+
+    @pytest.mark.django_db
     def test_v1_api_returns_datetimes(self, api_key_client, issue, states):
         url = _v1_url(issue)
         response = api_key_client.patch(url, {"state": str(states["started"].id)}, format="json")
