@@ -7,7 +7,7 @@ from importlib import import_module
 import pytest
 from django.apps import apps
 
-from plane.db.models import Project, State, Workspace
+from plane.db.models import DEFAULT_STATES, ERROR_STATE_NAME, Project, State, StateGroup, Workspace
 
 migration = import_module("plane.db.migrations.0126_add_error_state")
 
@@ -76,3 +76,61 @@ class TestAddErrorStateMigration:
         migration.add_error_state(apps, None)
 
         assert not State.all_state_objects.filter(project_id=project.id, name="Error").exists()
+
+    def test_started_state_is_last(self, workspace, create_user):
+        project = make_project(
+            workspace, create_user, "ERRE", [("Backlog", "backlog", 15000), ("In Progress", "started", 35000)]
+        )
+
+        migration.add_error_state(apps, None)
+
+        assert State.objects.get(project=project, name="Error").sequence == 50000
+
+    def test_placed_after_the_last_started_state(self, workspace, create_user):
+        project = make_project(
+            workspace,
+            create_user,
+            "ERRF",
+            [
+                ("In Progress", "started", 35000),
+                ("In Review", "started", 40000),
+                ("Done", "completed", 45000),
+            ],
+        )
+
+        migration.add_error_state(apps, None)
+
+        names = list(State.objects.filter(project=project).values_list("name", flat=True))
+        assert names == ["In Progress", "In Review", "Error", "Done"]
+        assert State.objects.get(project=project, name="Error").sequence == 42500
+
+    def test_soft_deleted_error_state_does_not_count(self, workspace, create_user):
+        project = make_project(workspace, create_user, "ERRG", DEFAULTS + [("Error", "cancelled", 60000)])
+        State.objects.get(project=project, name="Error").delete()
+
+        migration.add_error_state(apps, None)
+
+        error = State.objects.get(project=project, name="Error")
+        assert error.group == "started"
+        assert error.sequence == 40000
+
+    def test_project_without_states(self, workspace, create_user):
+        project = make_project(workspace, create_user, "ERRH", [])
+
+        migration.add_error_state(apps, None)
+
+        assert State.objects.get(project=project, name="Error").sequence == 15000
+
+
+@pytest.mark.unit
+class TestErrorStateDefaults:
+    def test_migration_matches_default_states(self):
+        default = next(state for state in DEFAULT_STATES if state["name"] == ERROR_STATE_NAME)
+
+        assert migration.ERROR_STATE == {key: default[key] for key in ("name", "color", "group")}
+        assert default["group"] == StateGroup.STARTED.value
+
+    def test_default_states_order(self):
+        names = [state["name"] for state in sorted(DEFAULT_STATES, key=lambda state: state["sequence"])]
+
+        assert names == ["Backlog", "Todo", "In Progress", "Error", "Done", "Cancelled", "Triage"]
