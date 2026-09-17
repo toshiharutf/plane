@@ -21,6 +21,9 @@ USAGE = {
 }
 
 
+TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
 def _url(slug, project_id, issue_id):
     return f"/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/ai-usage/"
 
@@ -137,6 +140,63 @@ class TestWorkItemAIUsage:
         assert missing_model.status_code == status.HTTP_400_BAD_REQUEST
         assert "model" in missing_model.data
         assert mixed_list.status_code == status.HTTP_400_BAD_REQUEST
+        assert not WorkItemAIUsage.objects.filter(issue=issue).exists()
+
+    def test_same_session_with_another_model_adds_a_row(self, workspace, project, state, create_user, human_client):
+        issue = _create_issue(project, workspace, state, create_user, "Task")
+        url = _url(workspace.slug, project.id, issue.id)
+
+        human_client.post(url, USAGE, format="json")
+        response = human_client.post(url, {**USAGE, "model": "claude-haiku-4-5", "input_tokens": 7}, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        rows = WorkItemAIUsage.objects.filter(issue=issue, session_id=USAGE["session_id"])
+        assert {row.model: row.input_tokens for row in rows} == {"claude-opus-5": 1200, "claude-haiku-4-5": 7}
+
+    def test_same_session_on_another_work_item_is_not_merged(
+        self, workspace, project, state, create_user, human_client
+    ):
+        first = _create_issue(project, workspace, state, create_user, "First")
+        second = _create_issue(project, workspace, state, create_user, "Second")
+
+        human_client.post(_url(workspace.slug, project.id, first.id), USAGE, format="json")
+        response = human_client.post(
+            _url(workspace.slug, project.id, second.id), {**USAGE, "output_tokens": 1}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert WorkItemAIUsage.objects.get(issue=first).output_tokens == USAGE["output_tokens"]
+        assert WorkItemAIUsage.objects.get(issue=second).output_tokens == 1
+
+    def test_empty_list_payload_is_rejected(self, workspace, project, state, create_user, human_client):
+        issue = _create_issue(project, workspace, state, create_user, "Task")
+
+        response = human_client.post(_url(workspace.slug, project.id, issue.id), [], format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not WorkItemAIUsage.objects.filter(issue=issue).exists()
+
+    def test_token_counts_default_to_zero(self, workspace, project, state, create_user, human_client):
+        issue = _create_issue(project, workspace, state, create_user, "Task")
+
+        response = human_client.post(
+            _url(workspace.slug, project.id, issue.id), {"model": "claude-opus-5"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert [response.data[field] for field in TOKEN_FIELDS] == [0, 0, 0, 0]
+        assert response.data["session_id"] == ""
+
+    def test_work_item_of_another_project_returns_404(self, workspace, project, state, create_user, human_client):
+        other = Project.objects.create(
+            name="Other Project", identifier="AIO", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        ProjectMember.objects.create(workspace=workspace, project=other, member=create_user, role=20, is_active=True)
+        issue = _create_issue(project, workspace, state, create_user, "Task")
+
+        response = human_client.post(_url(workspace.slug, other.id, issue.id), USAGE, format="json")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert not WorkItemAIUsage.objects.filter(issue=issue).exists()
 
     def test_unknown_work_item_returns_404(self, workspace, project, human_client):

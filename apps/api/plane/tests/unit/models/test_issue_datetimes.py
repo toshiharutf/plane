@@ -87,9 +87,7 @@ class TestIssueStartTargetDatetimes:
         issue.save()
         issue.refresh_from_db()
         assert issue.start_datetime is not None and issue.start_datetime >= before
-        assert issue.start_date == issue.start_datetime.astimezone(
-            __import__("zoneinfo").ZoneInfo("Asia/Tokyo")
-        ).date()
+        assert issue.start_date == issue.start_datetime.astimezone(__import__("zoneinfo").ZoneInfo("Asia/Tokyo")).date()
         assert issue.target_datetime is None
 
     def test_moving_between_started_states_keeps_start(self, issue, states):
@@ -156,3 +154,85 @@ class TestIssueStartTargetDatetimes:
         issue.save(update_fields=["state"])
         issue.refresh_from_db()
         assert issue.start_datetime is not None and issue.start_date is not None
+
+    def test_completed_clears_future_start(self, issue, states):
+        issue.start_datetime = timezone.now() + timedelta(days=5)
+        issue.save()
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.state = states["completed"]
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.target_datetime is not None and issue.target_date is not None
+        assert issue.start_date is None and issue.start_datetime is None
+
+    def test_completed_keeps_earlier_start(self, issue, states):
+        start = timezone.now().replace(microsecond=0) - timedelta(days=2)
+        issue.start_datetime = start
+        issue.save()
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.state = states["completed"]
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_datetime == start
+        assert issue.target_datetime >= start
+
+    def test_explicit_target_with_completed_state_wins(self, issue, states):
+        explicit = datetime(2026, 2, 3, 18, 45, 10, tzinfo=dt_timezone.utc)
+        issue.state = states["completed"]
+        issue.target_datetime = explicit
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.target_datetime == explicit
+        # 18:45 UTC is already the next day in Asia/Tokyo
+        assert issue.target_date == date(2026, 2, 4)
+
+    def test_started_keeps_future_target(self, issue, states):
+        target = timezone.now().replace(microsecond=0) + timedelta(days=10)
+        issue.target_datetime = target
+        issue.save()
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.state = states["started"]
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_datetime is not None
+        assert issue.target_datetime == target
+
+    def test_naive_datetime_string_is_read_as_utc(self, issue):
+        issue.start_datetime = "2026-07-01T23:10:05"
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_datetime == datetime(2026, 7, 1, 23, 10, 5, tzinfo=dt_timezone.utc)
+        assert issue.start_date == date(2026, 7, 2)
+
+    def test_clearing_datetime_clears_date(self, issue):
+        issue.start_datetime = datetime(2026, 1, 1, 1, 2, 3, tzinfo=dt_timezone.utc)
+        issue.save()
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.start_datetime = None
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_date is None and issue.start_datetime is None
+
+    def test_row_with_date_only_gets_datetime_on_next_save(self, issue):
+        # Rows written without save() (bulk_create, imports) can carry a date without a datetime
+        Issue.objects.filter(pk=issue.pk).update(target_date=date(2026, 8, 9), target_datetime=None)
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.name = "Renamed"
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.target_date == date(2026, 8, 9)
+        assert issue.target_datetime == datetime(2026, 8, 8, 15, 0, tzinfo=dt_timezone.utc)
+
+    def test_unknown_project_timezone_falls_back_to_utc(self, issue, project):
+        Project.objects.filter(pk=project.pk).update(timezone="Not/AZone")
+        issue = Issue.objects.get(pk=issue.pk)
+        issue.start_datetime = datetime(2026, 1, 1, 20, 30, tzinfo=dt_timezone.utc)
+        issue.save()
+        issue.refresh_from_db()
+        assert issue.start_date == date(2026, 1, 1)
+
+    def test_sync_reports_changed_fields_without_saving(self, issue):
+        issue.start_date = date(2026, 9, 1)
+        assert issue.sync_start_target_datetimes() == {"start_datetime"}
+        assert issue.start_datetime == datetime(2026, 8, 31, 15, 0, tzinfo=dt_timezone.utc)
+        assert Issue.objects.get(pk=issue.pk).start_datetime is None

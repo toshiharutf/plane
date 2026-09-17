@@ -194,6 +194,59 @@ class TestWorkspaceAIStatus:
 
         assert response.data["in_progress"] == []
 
+    def test_without_ai_bots_everything_is_empty(self, session_client, workspace, project, create_user):
+        states = _states(project)
+        _make_issue(project, states["started"], [create_user], "Human task", timezone.now())
+
+        response = session_client.get(_ai_status_url(workspace.slug))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"bots": [], "in_progress": [], "completed": []}
+
+    def test_negative_days_is_rejected(self, session_client, workspace, project, ai_bot):
+        response = session_client.get(_ai_status_url(workspace.slug), {"days": -1})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_other_bot_types_and_other_state_groups_are_ignored(self, session_client, workspace, project, ai_bot):
+        states = _states(project)
+        plain_bot = User.objects.create(
+            email="plain-bot@bots.local.plane", username="plain-bot", display_name="plain-bot", is_bot=True
+        )
+        WorkspaceMember.objects.create(workspace=workspace, member=plain_bot, role=15, is_active=True)
+        now = timezone.now()
+        _make_issue(project, states["started"], [plain_bot], "Other bot", now)
+        _make_issue(project, states["unstarted"], [ai_bot], "Not started", now)
+
+        response = session_client.get(_ai_status_url(workspace.slug))
+
+        assert [bot["id"] for bot in response.data["bots"]] == [str(ai_bot.id)]
+        assert response.data["in_progress"] == []
+        assert response.data["completed"] == []
+
+    def test_archived_and_deleted_items_are_hidden(self, session_client, workspace, project, ai_bot):
+        states = _states(project)
+        now = timezone.now()
+        archived = _make_issue(project, states["completed"], [ai_bot], "Archived", now, now)
+        Issue.objects.filter(pk=archived.pk).update(archived_at=now)
+        _make_issue(project, states["started"], [ai_bot], "Deleted", now).delete()
+
+        response = session_client.get(_ai_status_url(workspace.slug))
+
+        assert response.data["in_progress"] == []
+        assert response.data["completed"] == []
+
+    def test_in_progress_is_ordered_by_latest_start(self, session_client, workspace, project, ai_bot):
+        states = _states(project)
+        now = timezone.now().replace(microsecond=0)
+        older = _make_issue(project, states["started"], [ai_bot], "Older", now - timedelta(hours=6))
+        newer = _make_issue(project, states["started"], [ai_bot], "Newer", now - timedelta(hours=8))
+        _state_change(newer, states["started"], now - timedelta(minutes=5))
+
+        response = session_client.get(_ai_status_url(workspace.slug))
+
+        assert [item["id"] for item in response.data["in_progress"]] == [newer.id, older.id]
+
     def test_query_count_does_not_grow_with_items(self, session_client, workspace, project, ai_bot):
         states = _states(project)
         now = timezone.now()

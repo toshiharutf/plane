@@ -89,6 +89,24 @@ class TestIssueAIUsageSummary:
 
         assert response.data["totals"]["input_tokens"] == 0
 
+    def test_deleted_usage_rows_are_not_counted(self, session_client, workspace, project, issue):
+        _usage(issue, "claude-opus-5", "s1", input_tokens=10)
+        _usage(issue, "claude-opus-5", "s2", input_tokens=500).delete()
+
+        response = session_client.get(_url(workspace.slug, project.id, issue.id))
+
+        assert response.data["totals"]["input_tokens"] == 10
+        assert [row["input_tokens"] for row in response.data["models"]] == [10]
+
+    def test_large_token_counts_are_summed(self, session_client, workspace, project, issue):
+        # cache reads of long sessions exceed the 32 bit integer range
+        _usage(issue, "claude-opus-5", "s1", cache_read_input_tokens=3_000_000_000)
+        _usage(issue, "claude-opus-5", "s2", cache_read_input_tokens=3_000_000_000)
+
+        response = session_client.get(_url(workspace.slug, project.id, issue.id))
+
+        assert response.data["totals"]["cache_read_input_tokens"] == 6_000_000_000
+
     def test_non_member_is_forbidden(self, workspace, project, issue):
         outsider = User.objects.create(email="outsider-ai-usage@example.com", username="outsider-ai-usage")
         client = APIClient()
