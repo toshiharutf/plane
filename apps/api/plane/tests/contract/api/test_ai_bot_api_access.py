@@ -73,6 +73,13 @@ def _create_issue(project, workspace, state, user, name, assignee_ids=()):
     return issue
 
 
+def _create_issue_by(creator_id, project, workspace, state, name, assignee_ids=()):
+    """Work item whose ``created_by`` is ``creator_id`` (``save`` resets it to the request user, none in tests)."""
+    issue = _create_issue(project, workspace, state, None, name, assignee_ids)
+    Issue.objects.filter(pk=issue.pk).update(created_by_id=creator_id)
+    return issue
+
+
 def _create_page(project, workspace, owner, name, access=Page.PUBLIC_ACCESS, description_html="<p>doc</p>"):
     page = Page.objects.create(
         name=name,
@@ -189,6 +196,51 @@ class TestAIBotWorkItemAccess:
                 {"name": "Hijacked"},
                 format="json",
             )
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_bot_moves_its_own_unassigned_work_item_back_to_todo(
+        self, workspace, project, state, started_state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        cancelled = State.objects.create(name="Cancelled", group="cancelled", project=project, workspace=workspace)
+        url = lambda issue: _v1(workspace.slug, project.id, f"work-items/{issue.id}/")  # noqa: E731
+
+        for current in (done, cancelled, started_state):
+            ticket = _create_issue_by(bot_id, project, workspace, current, f"[Human] approve ({current.name})")
+            response = bot_client.patch(url(ticket), {"state": str(state.id)}, format="json")
+            assert response.status_code == status.HTTP_200_OK, response.data
+            ticket.refresh_from_db()
+            assert ticket.state_id == state.id
+
+    def test_bot_reopen_right_is_limited_to_todo_on_its_own_unassigned_work_items(
+        self, workspace, project, state, started_state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        backlog = State.objects.create(name="Backlog", group="backlog", project=project, workspace=workspace)
+        url = lambda issue: _v1(workspace.slug, project.id, f"work-items/{issue.id}/")  # noqa: E731
+
+        ticket = _create_issue_by(bot_id, project, workspace, done, "[Human] approve")
+        # Other target states or other fields are refused.
+        for body in (
+            {"state": str(started_state.id)},
+            {"state": str(backlog.id)},
+            {"state": str(state.id), "name": "Approved by the bot"},
+            {"name": "Approved by the bot"},
+        ):
+            response = bot_client.patch(url(ticket), body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+        ticket.refresh_from_db()
+        assert ticket.state_id == done.id
+
+        # Unassigned items created by a human, and bot-created items assigned to a human, are refused.
+        human_created = _create_issue_by(create_user.id, project, workspace, done, "Human's unassigned item")
+        assigned = _create_issue_by(bot_id, project, workspace, done, "[Human] assigned", [str(create_user.id)])
+        for issue in (human_created, assigned):
+            response = bot_client.patch(url(issue), {"state": str(state.id)}, format="json")
             assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_bot_cannot_upsert_or_delete_work_items(self, workspace, project, state, create_user, bot, monkeypatch):

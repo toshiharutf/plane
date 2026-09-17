@@ -12,7 +12,9 @@ narrower set of rights:
 - Work items: read everything, update only work items it is assigned to,
   create sub work items under work items it is assigned to, create unassigned
   top-level tickets for humans, and create top-level ``[Release] - <branch>``
-  work items assigned to itself (release tracking by the orchestrator).
+  work items assigned to itself (release tracking by the orchestrator). On
+  unassigned work items it created, it may only move the state back to Todo
+  (a state of the ``unstarted`` group), e.g. to ask a human again.
 - Comments: read and create on any work item, update or delete only its own.
 - Links: read everything, create only on work items it is assigned to, and
   update or delete only links it created.
@@ -27,7 +29,7 @@ import uuid
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 # Module imports
-from plane.db.models import IssueComment, IssueLink, Page
+from plane.db.models import Issue, IssueAssignee, IssueComment, IssueLink, Page, State
 from plane.utils.members import is_issue_assigned_to_user, is_workspace_ai_agent
 
 from .project import ProjectEntityPermission, ProjectLitePermission
@@ -57,6 +59,31 @@ def _requests_unassigned(data):
     return "assignees" in data and data.get("assignees") == []
 
 
+def _requests_todo_on_own_unassigned_item(request, view, issue_id):
+    """True for a ``PATCH`` that only sets ``state`` to a Todo state on an unassigned item the bot created.
+
+    Todo is any state of the ``unstarted`` group in the same project. This lets the orchestrator
+    reopen a ``[Human] ...`` ticket it created without giving it any other right on that ticket.
+    """
+    data = request.data
+    if set(data.keys()) != {"state"}:
+        return False
+    state_id = data.get("state")
+    if not _is_uuid(state_id) or not _is_uuid(issue_id):
+        return False
+    project_id = view.project_id
+    workspace_slug = view.workspace_slug
+    if not Issue.objects.filter(
+        pk=issue_id, project_id=project_id, workspace__slug=workspace_slug, created_by_id=request.user.id
+    ).exists():
+        return False
+    if IssueAssignee.objects.filter(issue_id=issue_id, deleted_at__isnull=True).exists():
+        return False
+    return State.objects.filter(
+        pk=state_id, project_id=project_id, workspace__slug=workspace_slug, group="unstarted"
+    ).exists()
+
+
 RELEASE_ITEM_PREFIX = "[Release] - "
 
 
@@ -78,8 +105,9 @@ def _requests_own_release_item(data, user_id):
 class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
     """Project members keep full access.
 
-    AI bots may read every work item, ``PATCH`` work items they are assigned to,
-    and ``POST`` new work items either as children (``parent``) of work items they
+    AI bots may read every work item, ``PATCH`` work items they are assigned to
+    (and move unassigned work items they created back to a Todo state), and
+    ``POST`` new work items either as children (``parent``) of work items they
     are assigned to, or as unassigned top-level work items (``assignees`` given
     explicitly as an empty list) that ask a human for a decision or an action.
     Such tickets are never assigned to the bot, so the bot cannot work on them.
@@ -104,7 +132,11 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
         if request.method == "PATCH":
             issue_id = view.kwargs.get("pk")
             return bool(
-                issue_id and is_issue_assigned_to_user(issue_id, project_id, view.workspace_slug, request.user.id)
+                issue_id
+                and (
+                    is_issue_assigned_to_user(issue_id, project_id, view.workspace_slug, request.user.id)
+                    or _requests_todo_on_own_unassigned_item(request, view, issue_id)
+                )
             )
 
         if request.method == "POST":
