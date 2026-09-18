@@ -13,7 +13,7 @@ from plane.api.serializers.human_request import HumanRequestSerializer
 from plane.app.permissions import ProjectEntityPermission
 from plane.app.permissions.ai_bot import ProjectEntityOrAIBotHumanRequestPermission
 from plane.db.models import HumanRequest, Issue
-from plane.utils.human_request import HumanRequestError, answer_human_request, open_human_request
+from plane.utils.human_request import HumanRequestError, answer_human_request, answer_text, open_human_request
 from plane.utils.openapi import (
     CONFLICT_RESPONSE,
     CURSOR_PARAMETER,
@@ -196,7 +196,7 @@ class WorkItemHumanRequestAnswerAPIEndpoint(_WorkItemHumanRequestMixin, BaseAPIV
         if human_request is None:
             return Response({"error": "Human request not found"}, status=status.HTTP_404_NOT_FOUND)
         try:
-            human_request = answer_human_request(human_request.id, request.data.get("answer"), request.user)
+            human_request = answer_human_request(human_request.id, answer_text(request.data), request.user)
         except HumanRequestError as exc:
             return Response(exc.payload, status=exc.status_code)
         return Response(HumanRequestSerializer(human_request).data, status=status.HTTP_200_OK)

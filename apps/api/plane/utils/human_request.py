@@ -83,6 +83,11 @@ def parse_answer(kind, text):
     return APPROVAL_DECISIONS[match.group(1).lower()], text[match.end() :].strip(NOTE_SEPARATORS)
 
 
+def answer_text(data):
+    """The ``answer`` of a request body; None when the body is not an object (a JSON list, for example)."""
+    return data.get("answer") if isinstance(data, dict) else None
+
+
 def answer_note(kind, answer):
     """The note of an answered approval (the answer without its leading yes/no word), else ``""``."""
     if kind != HumanRequestKind.APPROVAL.value or not answer:

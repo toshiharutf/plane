@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from plane.app.permissions import ROLE, allow_permission
 from plane.app.views.base import BaseAPIView
 from plane.db.models import HumanRequest, ProjectMember
-from plane.utils.human_request import HumanRequestError, answer_human_request, answer_note
+from plane.utils.human_request import HumanRequestError, answer_human_request, answer_note, answer_text
 
 
 def _rows(queryset):
@@ -100,7 +100,7 @@ class WorkspaceHumanRequestAnswerEndpoint(BaseAPIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         try:
-            answer_human_request(human_request.id, request.data.get("answer"), request.user)
+            answer_human_request(human_request.id, answer_text(request.data), request.user)
         except HumanRequestError as exc:
             return Response(exc.payload, status=exc.status_code)
         return Response(_rows(HumanRequest.objects.filter(pk=human_request.id))[0], status=status.HTTP_200_OK)

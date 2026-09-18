@@ -249,6 +249,18 @@ class TestAnswerHumanRequest:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert HumanRequest.objects.get(pk=request_id).is_open
 
+    def test_ac2_answer_body_that_is_not_an_object_is_400(
+        self, workspace, project, states, bot, bot_item, human_api, human_web
+    ):
+        request_id = _open_request(bot, workspace, project, bot_item, "question", "Which DB for tests?")
+
+        v1 = human_api.post(_answer_url(workspace.slug, project.id, bot_item.id, request_id), ["yes"], format="json")
+        web = human_web.post(_web_url(workspace.slug, f"{request_id}/answer/"), ["yes"], format="json")
+
+        assert v1.status_code == status.HTTP_400_BAD_REQUEST
+        assert web.status_code == status.HTTP_400_BAD_REQUEST
+        assert HumanRequest.objects.get(pk=request_id).is_open
+
     def test_ac3_approval_deny_keeps_the_note(self, workspace, project, states, bot, bot_item, human_api):
         request_id = _open_request(bot, workspace, project, bot_item)
 
