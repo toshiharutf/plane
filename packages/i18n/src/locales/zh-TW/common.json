@@ -162,6 +162,17 @@
       "work_items": "工作事項"
     }
   },
+  "human_request": {
+    "approval": "請求核准",
+    "question": "問題",
+    "asked_by": "提問者：{name}",
+    "answer": "回答",
+    "placeholder": "輸入您的回答",
+    "approval_placeholder": "以「yes」或「no」開頭，可再附上備註",
+    "approval_hint": "以「yes」或「no」開頭",
+    "send": "傳送",
+    "send_failed": "回答未送出"
+  },
   "workspace_invites": "工作區邀請",
   "enter_god_mode": "進入管理員模式",
   "workspace_logo": "工作區標誌",

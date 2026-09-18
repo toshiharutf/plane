@@ -162,6 +162,17 @@
       "work_items": "Activități"
     }
   },
+  "human_request": {
+    "approval": "Aprobare solicitată",
+    "question": "Întrebare",
+    "asked_by": "întrebat de {name}",
+    "answer": "Răspuns",
+    "placeholder": "Scrie răspunsul",
+    "approval_placeholder": "Începe cu „yes” sau „no”, apoi adaugă o notă dacă vrei",
+    "approval_hint": "Începe cu „yes” sau „no”",
+    "send": "Trimite",
+    "send_failed": "Răspunsul nu a fost trimis"
+  },
   "workspace_invites": "Invitațiile din spațiul de lucru",
   "enter_god_mode": "Activează modul Dumnezeu",
   "workspace_logo": "Sigla spațiului de lucru",

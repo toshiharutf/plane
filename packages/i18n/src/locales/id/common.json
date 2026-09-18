@@ -162,6 +162,17 @@
       "work_items": "Item kerja"
     }
   },
+  "human_request": {
+    "approval": "Persetujuan diminta",
+    "question": "Pertanyaan",
+    "asked_by": "ditanyakan oleh {name}",
+    "answer": "Jawaban",
+    "placeholder": "Ketik jawaban Anda",
+    "approval_placeholder": "Awali dengan \"yes\" atau \"no\", lalu tambahkan catatan jika perlu",
+    "approval_hint": "Awali dengan \"yes\" atau \"no\"",
+    "send": "Kirim",
+    "send_failed": "Jawaban tidak terkirim"
+  },
   "workspace_invites": "Undangan ruang kerja",
   "enter_god_mode": "Masuk ke mode dewa",
   "workspace_logo": "Logo ruang kerja",

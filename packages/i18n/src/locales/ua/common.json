@@ -162,6 +162,17 @@
       "work_items": "Робочі одиниці"
     }
   },
+  "human_request": {
+    "approval": "Запит на схвалення",
+    "question": "Питання",
+    "asked_by": "запитує {name}",
+    "answer": "Відповідь",
+    "placeholder": "Введіть відповідь",
+    "approval_placeholder": "Почніть із «yes» або «no», потім за бажанням додайте примітку",
+    "approval_hint": "Почніть із «yes» або «no»",
+    "send": "Надіслати",
+    "send_failed": "Відповідь не надіслано"
+  },
   "workspace_invites": "Запрошення до робочого простору",
   "enter_god_mode": "Увійти в режим Бога",
   "workspace_logo": "Логотип робочого простору",

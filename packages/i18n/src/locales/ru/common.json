@@ -162,6 +162,17 @@
       "work_items": "Рабочие элементы"
     }
   },
+  "human_request": {
+    "approval": "Запрошено одобрение",
+    "question": "Вопрос",
+    "asked_by": "спрашивает {name}",
+    "answer": "Ответ",
+    "placeholder": "Введите ответ",
+    "approval_placeholder": "Начните с «yes» или «no», затем при желании добавьте примечание",
+    "approval_hint": "Начните с «yes» или «no»",
+    "send": "Отправить",
+    "send_failed": "Ответ не отправлен"
+  },
   "workspace_invites": "Приглашения в рабочее пространство",
   "enter_god_mode": "Режим администратора",
   "workspace_logo": "Логотип рабочего пространства",

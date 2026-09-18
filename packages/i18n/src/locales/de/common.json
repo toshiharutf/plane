@@ -162,6 +162,17 @@
       "work_items": "Arbeitselemente"
     }
   },
+  "human_request": {
+    "approval": "Genehmigung angefordert",
+    "question": "Frage",
+    "asked_by": "gefragt von {name}",
+    "answer": "Antwort",
+    "placeholder": "Antwort eingeben",
+    "approval_placeholder": "Mit „yes“ oder „no“ beginnen, optional eine Notiz hinzufügen",
+    "approval_hint": "Mit „yes“ oder „no“ beginnen",
+    "send": "Senden",
+    "send_failed": "Die Antwort wurde nicht gesendet"
+  },
   "workspace_invites": "Einladungen zum Arbeitsbereich",
   "enter_god_mode": "God-Mode betreten",
   "workspace_logo": "Arbeitsbereichslogo",

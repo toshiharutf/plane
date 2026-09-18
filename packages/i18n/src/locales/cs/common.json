@@ -162,6 +162,17 @@
       "work_items": "Pracovní položky"
     }
   },
+  "human_request": {
+    "approval": "Žádost o schválení",
+    "question": "Otázka",
+    "asked_by": "od {name}",
+    "answer": "Odpověď",
+    "placeholder": "Zadejte svou odpověď",
+    "approval_placeholder": "Začněte slovem „yes“ nebo „no“ a případně přidejte poznámku",
+    "approval_hint": "Začněte slovem „yes“ nebo „no“",
+    "send": "Odeslat",
+    "send_failed": "Odpověď nebyla odeslána"
+  },
   "workspace_invites": "Pozvánky do pracovního prostoru",
   "enter_god_mode": "Vstoupit do režimu boha",
   "workspace_logo": "Logo pracovního prostoru",

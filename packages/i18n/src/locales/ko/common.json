@@ -162,6 +162,17 @@
       "work_items": "작업 항목"
     }
   },
+  "human_request": {
+    "approval": "승인 요청",
+    "question": "질문",
+    "asked_by": "요청자: {name}",
+    "answer": "답변",
+    "placeholder": "답변을 입력하세요",
+    "approval_placeholder": "\"yes\" 또는 \"no\"로 시작하고 필요하면 메모를 추가하세요",
+    "approval_hint": "\"yes\" 또는 \"no\"로 시작하세요",
+    "send": "보내기",
+    "send_failed": "답변을 보내지 못했습니다"
+  },
   "workspace_invites": "작업 공간 초대",
   "enter_god_mode": "갓 모드로 전환",
   "workspace_logo": "작업 공간 로고",

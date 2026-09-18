@@ -162,6 +162,17 @@
       "work_items": "工作项"
     }
   },
+  "human_request": {
+    "approval": "请求审批",
+    "question": "问题",
+    "asked_by": "提问者：{name}",
+    "answer": "回答",
+    "placeholder": "输入你的回答",
+    "approval_placeholder": "以“yes”或“no”开头，可在后面附上备注",
+    "approval_hint": "以“yes”或“no”开头",
+    "send": "发送",
+    "send_failed": "回答未发送"
+  },
   "workspace_invites": "工作区邀请",
   "enter_god_mode": "进入管理员模式",
   "workspace_logo": "工作区标志",

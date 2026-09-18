@@ -162,6 +162,17 @@
       "work_items": "Elementi di lavoro"
     }
   },
+  "human_request": {
+    "approval": "Approvazione richiesta",
+    "question": "Domanda",
+    "asked_by": "chiesto da {name}",
+    "answer": "Risposta",
+    "placeholder": "Scrivi la tua risposta",
+    "approval_placeholder": "Inizia con «yes» o «no», poi aggiungi una nota se vuoi",
+    "approval_hint": "Inizia con «yes» o «no»",
+    "send": "Invia",
+    "send_failed": "La risposta non è stata inviata"
+  },
   "workspace_invites": "Inviti allo spazio di lavoro",
   "enter_god_mode": "Entra in modalità dio",
   "workspace_logo": "Logo dello spazio di lavoro",

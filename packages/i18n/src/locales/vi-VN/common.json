@@ -162,6 +162,17 @@
       "work_items": "Mục công việc"
     }
   },
+  "human_request": {
+    "approval": "Yêu cầu phê duyệt",
+    "question": "Câu hỏi",
+    "asked_by": "hỏi bởi {name}",
+    "answer": "Câu trả lời",
+    "placeholder": "Nhập câu trả lời của bạn",
+    "approval_placeholder": "Bắt đầu bằng \"yes\" hoặc \"no\", sau đó thêm ghi chú nếu muốn",
+    "approval_hint": "Bắt đầu bằng \"yes\" hoặc \"no\"",
+    "send": "Gửi",
+    "send_failed": "Chưa gửi được câu trả lời"
+  },
   "workspace_invites": "Lời mời không gian làm việc",
   "enter_god_mode": "Vào chế độ quản trị viên",
   "workspace_logo": "Logo không gian làm việc",

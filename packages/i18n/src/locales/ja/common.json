@@ -162,6 +162,17 @@
       "work_items": "作業項目"
     }
   },
+  "human_request": {
+    "approval": "承認リクエスト",
+    "question": "質問",
+    "asked_by": "依頼者：{name}",
+    "answer": "回答",
+    "placeholder": "回答を入力してください",
+    "approval_placeholder": "「yes」または「no」で始め、必要に応じてメモを追加してください",
+    "approval_hint": "「yes」または「no」で始めてください",
+    "send": "送信",
+    "send_failed": "回答を送信できませんでした"
+  },
   "workspace_invites": "ワークスペースの招待",
   "enter_god_mode": "ゴッドモードに入る",
   "workspace_logo": "ワークスペースのロゴ",

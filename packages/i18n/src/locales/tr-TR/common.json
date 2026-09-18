@@ -162,6 +162,17 @@
       "work_items": "İş öğeleri"
     }
   },
+  "human_request": {
+    "approval": "Onay isteniyor",
+    "question": "Soru",
+    "asked_by": "soran: {name}",
+    "answer": "Yanıt",
+    "placeholder": "Yanıtınızı yazın",
+    "approval_placeholder": "\"yes\" veya \"no\" ile başlayın, isterseniz bir not ekleyin",
+    "approval_hint": "\"yes\" veya \"no\" ile başlayın",
+    "send": "Gönder",
+    "send_failed": "Yanıt gönderilemedi"
+  },
   "workspace_invites": "Çalışma Alanı Davetleri",
   "enter_god_mode": "Yönetici Moduna Geç",
   "workspace_logo": "Çalışma Alanı Logosu",
