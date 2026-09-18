@@ -474,6 +474,25 @@ class TestHumanRequestEdgeCases:
         issue.refresh_from_db()
         assert issue.state_id == states.in_progress.id
 
+    @pytest.mark.parametrize("name,group", [("Done", "completed"), ("Cancelled", "cancelled")])
+    def test_asking_on_a_closed_item_resumes_the_first_started_state(
+        self, workspace, project, states, create_user, bot, human_api, name, group
+    ):
+        # The orchestrator asks after the worker closed the item (a failed check after the session):
+        # the answer means "keep working", so the item must not go back to Done or Cancelled.
+        closed = State.objects.create(name=name, group=group, sequence=60000, project=project, workspace=workspace)
+        issue = _create_issue(project, workspace, closed, create_user, "Closed too early", [bot.id])
+        request_id = _open_request(bot, workspace, project, issue, "question", "Continue?")
+        assert HumanRequest.objects.get(pk=request_id).state_before_id == closed.id
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, issue.id, request_id), {"answer": "continue"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        issue.refresh_from_db()
+        assert issue.state_id == states.in_progress.id
+
     def test_asking_on_an_item_already_awaiting_human_resumes_the_first_started_state(
         self, workspace, project, states, create_user, bot, human_api
     ):

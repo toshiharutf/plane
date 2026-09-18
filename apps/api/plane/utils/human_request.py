@@ -10,7 +10,8 @@ humans answer), so both follow the same rules:
 - Opening a request remembers the work item state and moves the item to the
   project's Awaiting Human state. A work item has at most one open request.
 - Answering stores the text, sets the decision, moves the item back to the
-  remembered state and adds a comment ``Answer: <text>``.
+  remembered state (a started one when that state is closed: Done or
+  Cancelled) and adds a comment ``Answer: <text>``.
 - An approval answer must start with the word yes/accept or no/deny
   (case-insensitive); the rest of the text is the note.
 """
@@ -154,10 +155,17 @@ def open_human_request(issue, kind, question, requested_by):
     return human_request
 
 
+# An open request means the work is not finished: answering never resumes into Done or Cancelled, even when
+# the bot asked after it had closed the item (a failed check after the session, for example).
+CLOSED_STATE_GROUPS = (StateGroup.COMPLETED.value, StateGroup.CANCELLED.value)
+
+
 def _resume_state(human_request):
-    """The state to go back to: the remembered one, else the first other ``started`` state, else the default."""
-    if human_request.state_before_id and State.objects.filter(pk=human_request.state_before_id).exists():
-        return human_request.state_before
+    """The state to go back to: the remembered one unless it is closed (completed or cancelled), else the first
+    other ``started`` state, else the default."""
+    before = State.objects.filter(pk=human_request.state_before_id).first() if human_request.state_before_id else None
+    if before is not None and before.group not in CLOSED_STATE_GROUPS:
+        return before
     states = State.objects.filter(project_id=human_request.project_id)
     return (
         states.filter(group=StateGroup.STARTED.value)
