@@ -11,26 +11,43 @@ A bot authenticated with its API key can:
 - move unassigned work items it created back to a Todo state (nothing else on them),
 - create sub work items under work items it is assigned to,
 - create unassigned top-level work items that ask a human for an action,
-- create top-level ``[Release] - <branch>`` work items assigned only to itself,
 - comment on any work item and edit only its own comments,
 - add links to work items it is assigned to and edit or delete only its own links,
 - create relations between any work items,
-- read public pages, create pages, and update only pages it owns.
+- read public pages, create pages, and update only pages it owns,
+- create top-level work items that are unassigned or assigned only to itself
+  (a ``[Human]`` ticket must stay unassigned),
+- update the planning fields of work items it created, never to a Done state,
+  never assigning anyone but itself,
+- read, create and update cycles and modules and add work items to them, but
+  never delete or archive them,
+- read and create labels, but never update or delete them,
+- create the project's estimate and its points when none exists, and make an
+  estimate it created the project's estimate.
 """
 
+from datetime import timedelta
+from uuid import uuid4
+
 import pytest
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from uuid import uuid4
-
 from plane.db.models import (
     ERROR_STATE_NAME,
+    Cycle,
+    CycleIssue,
+    Estimate,
+    EstimatePoint,
     Issue,
     IssueAssignee,
     IssueComment,
     IssueLink,
     IssueRelation,
+    Label,
+    Module,
+    ModuleIssue,
     Page,
     Project,
     ProjectMember,
@@ -44,8 +61,10 @@ def _v1(slug, project_id, suffix=""):
 
 
 def _stub_tasks(monkeypatch):
-    monkeypatch.setattr("plane.api.views.issue.issue_activity.delay", lambda **kwargs: None)
-    monkeypatch.setattr("plane.api.views.issue.model_activity.delay", lambda **kwargs: None)
+    for module in ("issue", "cycle", "module", "project"):
+        monkeypatch.setattr(f"plane.api.views.{module}.model_activity.delay", lambda **kwargs: None)
+    for module in ("issue", "cycle", "module"):
+        monkeypatch.setattr(f"plane.api.views.{module}.issue_activity.delay", lambda **kwargs: None)
     monkeypatch.setattr("plane.api.views.issue.crawl_work_item_link_title.delay", lambda *args, **kwargs: None)
     monkeypatch.setattr("plane.api.views.page.page_transaction.delay", lambda **kwargs: None)
 
@@ -367,14 +386,18 @@ class TestAIBotWorkItemAccess:
         assignee_ids = {str(a) for a in assigned}
         assert assignee_ids == {other_bot_id}
 
-    def test_bot_cannot_create_top_level_or_foreign_sub_work_items(
+    def test_bot_cannot_create_foreign_sub_work_items_or_top_level_work_for_others(
         self, workspace, project, state, create_user, bot, monkeypatch
     ):
         _stub_tasks(monkeypatch)
         _bot_id, bot_client = bot
         human = _create_issue(project, workspace, state, create_user, "Human epic", [str(create_user.id)])
 
-        top_level = bot_client.post(_v1(workspace.slug, project.id, "work-items/"), {"name": "Rogue"}, format="json")
+        top_level = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "Rogue", "assignees": [str(create_user.id)]},
+            format="json",
+        )
         foreign_child = bot_client.post(
             _v1(workspace.slug, project.id, "work-items/"),
             {"name": "Rogue child", "parent": str(human.id)},
@@ -386,14 +409,14 @@ class TestAIBotWorkItemAccess:
             format="json",
         )
 
-        assigned_to_self = bot_client.post(
+        shared = bot_client.post(
             _v1(workspace.slug, project.id, "work-items/"),
-            {"name": "Rogue assigned", "assignees": [_bot_id]},
+            {"name": "Rogue shared", "assignees": [_bot_id, str(create_user.id)]},
             format="json",
         )
 
         assert top_level.status_code == status.HTTP_403_FORBIDDEN
-        assert assigned_to_self.status_code == status.HTTP_403_FORBIDDEN
+        assert shared.status_code == status.HTTP_403_FORBIDDEN
         assert foreign_child.status_code == status.HTTP_403_FORBIDDEN
         assert bad_parent.status_code == status.HTTP_403_FORBIDDEN
         assert Issue.objects.filter(name__startswith="Rogue").count() == 0
@@ -407,7 +430,7 @@ class TestAIBotWorkItemAccess:
 
         response = bot_client.post(
             _v1(workspace.slug, project.id, "work-items/"),
-            {"name": "Human: choose where the script lives", "assignees": [], "state": str(state.id)},
+            {"name": "[Human] choose where the script lives", "assignees": [], "state": str(state.id)},
             format="json",
         )
 
@@ -487,7 +510,7 @@ class TestAIBotWorkItemAccess:
         )
         assert approve.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_bot_cannot_create_release_items_for_others_or_other_top_level_work(
+    def test_bot_cannot_create_release_items_for_others(
         self, session_client, workspace, project, state, create_user, bot, monkeypatch
     ):
         _stub_tasks(monkeypatch)
@@ -497,9 +520,6 @@ class TestAIBotWorkItemAccess:
             {"name": "[Release] - develop", "assignees": [str(create_user.id)]},
             {"name": "[Release] - develop", "assignees": [other_bot_id]},
             {"name": "[Release] - develop", "assignees": [bot_id, str(create_user.id)]},
-            {"name": "[release] - develop", "assignees": [bot_id]},
-            {"name": "Rogue [Release] - develop", "assignees": [bot_id]},
-            {"name": "[Release] develop"},
         ]
         for body in cases:
             response = bot_client.post(_v1(workspace.slug, project.id, "work-items/"), body, format="json")
@@ -850,3 +870,562 @@ class TestAIBotLinkAccess:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def _set_created_by(instance, user_id):
+    """``save`` resets ``created_by`` to the request user (none in tests); set it afterwards."""
+    type(instance).objects.filter(pk=instance.pk).update(created_by_id=user_id)
+    instance.refresh_from_db()
+    return instance
+
+
+def _create_cycle(project, workspace, owner, name, start_days=1, end_days=7):
+    return Cycle.objects.create(
+        name=name,
+        start_date=timezone.now() + timedelta(days=start_days),
+        end_date=timezone.now() + timedelta(days=end_days),
+        project=project,
+        workspace=workspace,
+        owned_by=owner,
+    )
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIBotPlannedWorkItemAccess:
+    def test_bot_creates_top_level_work_items_unassigned_or_for_itself(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        url = _v1(workspace.slug, project.id, "work-items/")
+
+        implicit = bot_client.post(url, {"name": "Planned A"}, format="json")
+        explicit = bot_client.post(url, {"name": "Planned B", "assignees": [bot_id]}, format="json")
+        unassigned = bot_client.post(url, {"name": "Planned C", "assignees": []}, format="json")
+
+        for response in (implicit, explicit, unassigned):
+            assert response.status_code == status.HTTP_201_CREATED, response.data
+        assignees = lambda response: {  # noqa: E731
+            str(a)
+            for a in IssueAssignee.objects.filter(issue_id=response.data["id"]).values_list("assignee_id", flat=True)
+        }
+        assert assignees(implicit) == {bot_id}
+        assert assignees(explicit) == {bot_id}
+        assert assignees(unassigned) == set()
+        assert Issue.objects.get(pk=implicit.data["id"]).created_by_id is not None
+        assert str(Issue.objects.get(pk=implicit.data["id"]).created_by_id) == bot_id
+
+    def test_bot_cannot_create_human_tickets_assigned_to_itself(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        url = _v1(workspace.slug, project.id, "work-items/")
+
+        for body in (
+            {"name": "[Human] approve release"},
+            {"name": "[Human] approve release", "assignees": [bot_id]},
+            {"name": " [human] approve release", "assignees": [bot_id]},
+            {"name": "Planned", "assignees": [str(create_user.id)]},
+            {"name": "Planned", "assignees": bot_id},
+        ):
+            response = bot_client.post(url, body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+
+        assert not Issue.objects.filter(project=project).exists()
+        ticket = bot_client.post(url, {"name": "[Human] approve release", "assignees": []}, format="json")
+        assert ticket.status_code == status.HTTP_201_CREATED, ticket.data
+
+    def test_bot_updates_planning_fields_of_its_own_work_item(
+        self, workspace, project, state, started_state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        cancelled = State.objects.create(name="Cancelled", group="cancelled", project=project, workspace=workspace)
+        label = Label.objects.create(name="lane:fork", project=project, workspace=workspace)
+        estimate = Estimate.objects.create(name="Points", type="points", project=project, workspace=workspace)
+        point = EstimatePoint.objects.create(estimate=estimate, key=1, value="3", project=project, workspace=workspace)
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+        url = _v1(workspace.slug, project.id, f"work-items/{item.id}/")
+
+        response = bot_client.patch(
+            url,
+            {
+                "name": "Planned item (reshaped)",
+                "description_html": "<p>Contract</p>",
+                "priority": "high",
+                "labels": [str(label.id)],
+                "estimate_point": str(point.id),
+                "start_date": "2026-09-21",
+                "target_date": "2026-09-27",
+                "state": str(started_state.id),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+        item.refresh_from_db()
+        assert item.name == "Planned item (reshaped)"
+        assert item.priority == "high"
+        assert item.estimate_point_id == point.id
+        assert list(item.labels.values_list("id", flat=True)) == [label.id]
+
+        # Assign it to itself, give it back, and cancel it.
+        for body in ({"assignees": [bot_id]}, {"assignees": []}, {"state": str(cancelled.id)}):
+            response = bot_client.patch(url, body, format="json")
+            assert response.status_code == status.HTTP_200_OK, (body, response.data)
+        item.refresh_from_db()
+        assert item.state_id == cancelled.id
+        assert not IssueAssignee.objects.filter(issue=item).exists()
+
+    def test_bot_cannot_set_a_completed_state_or_assign_others_on_its_own_work_item(
+        self, session_client, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        other_bot_id, _other_client = _create_bot(session_client, workspace, "Helper AI")
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        other_project = Project.objects.create(
+            name="Other Project", identifier="OTH", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        other_state = State.objects.create(name="Todo", group="unstarted", project=other_project, workspace=workspace)
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+        url = _v1(workspace.slug, project.id, f"work-items/{item.id}/")
+
+        for body in (
+            {"state": str(done.id)},
+            {"state": str(done.id), "name": "Finished"},
+            {"state": str(other_state.id)},
+            {"state": None},
+            {"assignees": [str(create_user.id)]},
+            {"assignees": [bot_id, str(create_user.id)]},
+            {"assignees": [other_bot_id]},
+            {"assignees": [bot_id, bot_id]},
+            {"name": "[Human] approve release"},
+            {"external_source": "plane-planner", "external_id": "x"},
+            {"sort_order": 1},
+            {},
+        ):
+            response = bot_client.patch(url, body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+        item.refresh_from_db()
+        assert item.state_id == state.id
+        assert item.name == "Planned item"
+        assert not IssueAssignee.objects.filter(issue=item).exists()
+
+    def test_bot_cannot_update_work_items_it_did_not_create_or_that_a_human_holds(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        human_item = _create_issue_by(create_user.id, project, workspace, state, "Human's item")
+        # ``external_source`` can be set by any client; it gives no ownership.
+        Issue.objects.filter(pk=human_item.pk).update(external_source="plane-planner", external_id="plan/T1")
+        held = _create_issue_by(bot_id, project, workspace, state, "Planned, taken by a human", [str(create_user.id)])
+        human_ticket = _create_issue_by(bot_id, project, workspace, state, "[Human] choose a host")
+
+        for issue in (human_item, held, human_ticket):
+            for body in ({"name": "Hijacked"}, {"description_html": "<p>x</p>"}, {"assignees": []}):
+                response = bot_client.patch(
+                    _v1(workspace.slug, project.id, f"work-items/{issue.id}/"), body, format="json"
+                )
+                assert response.status_code == status.HTTP_403_FORBIDDEN, (issue.name, body)
+        assert IssueAssignee.objects.filter(issue=held, assignee=create_user).exists()
+
+    def test_bot_moves_its_own_work_item_under_a_parent_it_owns(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+        own_parent = _create_issue_by(bot_id, project, workspace, state, "Planned epic")
+        assigned_parent = _create_issue(project, workspace, state, create_user, "Human epic for the bot", [bot_id])
+        url = _v1(workspace.slug, project.id, f"work-items/{item.id}/")
+
+        for parent in (own_parent, assigned_parent):
+            response = bot_client.patch(url, {"parent": str(parent.id)}, format="json")
+            assert response.status_code == status.HTTP_200_OK, response.data
+            item.refresh_from_db()
+            assert item.parent_id == parent.id
+
+        response = bot_client.patch(url, {"parent": None}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+        item.refresh_from_db()
+        assert item.parent_id is None
+
+    def test_bot_cannot_move_its_work_item_under_a_foreign_parent(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        other_project = Project.objects.create(
+            name="Other Project", identifier="OTH", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        other_state = State.objects.create(name="Todo", group="unstarted", project=other_project, workspace=workspace)
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+        human_parent = _create_issue_by(create_user.id, project, workspace, state, "Human epic")
+        foreign = _create_issue_by(bot_id, other_project, workspace, other_state, "Bot item elsewhere")
+        url = _v1(workspace.slug, project.id, f"work-items/{item.id}/")
+
+        for parent in (str(human_parent.id), str(foreign.id), str(item.id), str(uuid4()), "not-a-uuid", ""):
+            response = bot_client.patch(url, {"parent": parent}, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, parent
+        item.refresh_from_db()
+        assert item.parent_id is None
+
+    def test_human_still_completes_and_assigns_bot_created_work_items(
+        self, workspace, project, state, create_user, human_client, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, _bot_client = bot
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+
+        response = human_client.patch(
+            _v1(workspace.slug, project.id, f"work-items/{item.id}/"),
+            {"state": str(done.id), "assignees": [str(create_user.id)]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+        item.refresh_from_db()
+        assert item.state_id == done.id
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIBotCycleAccess:
+    def test_bot_reads_creates_and_updates_cycles(self, workspace, project, create_user, bot, monkeypatch):
+        _stub_tasks(monkeypatch)
+        Project.objects.filter(pk=project.pk).update(cycle_view=True)
+        _bot_id, bot_client = bot
+        human_cycle = _create_cycle(project, workspace, create_user, "Human cycle")
+
+        listing = bot_client.get(_v1(workspace.slug, project.id, "cycles/"))
+        assert listing.status_code == status.HTTP_200_OK, listing.data
+        assert str(human_cycle.id) in {str(cycle["id"]) for cycle in listing.data["results"]}
+
+        created = bot_client.post(
+            _v1(workspace.slug, project.id, "cycles/"),
+            {
+                "name": "C1",
+                "start_date": "2026-10-05",
+                "end_date": "2026-10-11",
+                "external_source": "plane-planner",
+                "external_id": "plan/C1",
+            },
+            format="json",
+        )
+        assert created.status_code == status.HTTP_201_CREATED, created.data
+
+        for cycle_id in (created.data["id"], human_cycle.id):
+            url = _v1(workspace.slug, project.id, f"cycles/{cycle_id}/")
+            response = bot_client.patch(
+                url,
+                {
+                    "name": "C1 - Bot writes",
+                    "description": "Goal",
+                    "start_date": "2026-10-06",
+                    "end_date": "2026-10-12",
+                },
+                format="json",
+            )
+            assert response.status_code == status.HTTP_200_OK, response.data
+            assert bot_client.get(url).status_code == status.HTTP_200_OK
+        human_cycle.refresh_from_db()
+        assert human_cycle.name == "C1 - Bot writes"
+
+    def test_bot_cannot_delete_archive_or_change_other_cycle_fields(
+        self, workspace, project, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        cycle = _create_cycle(project, workspace, create_user, "Human cycle")
+        _set_created_by(cycle, bot_id)
+        url = _v1(workspace.slug, project.id, f"cycles/{cycle.id}/")
+
+        for body in ({"owned_by": bot_id}, {"name": "Renamed", "sort_order": 1}, {}):
+            response = bot_client.patch(url, body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+        assert bot_client.delete(url).status_code == status.HTTP_403_FORBIDDEN
+        archive = bot_client.post(_v1(workspace.slug, project.id, f"cycles/{cycle.id}/archive/"))
+        assert archive.status_code == status.HTTP_403_FORBIDDEN
+        cycle.refresh_from_db()
+        assert cycle.name == "Human cycle"
+        assert cycle.archived_at is None
+        assert Cycle.objects.filter(pk=cycle.id).exists()
+
+    def test_bot_adds_work_items_to_a_cycle_and_transfers_open_ones(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        current = _create_cycle(project, workspace, create_user, "C1")
+        following = _create_cycle(project, workspace, create_user, "C2", start_days=8, end_days=14)
+        items = [_create_issue_by(bot_id, project, workspace, state, f"Planned {n}") for n in range(2)]
+
+        added = bot_client.post(
+            _v1(workspace.slug, project.id, f"cycles/{current.id}/cycle-issues/"),
+            {"issues": [str(item.id) for item in items]},
+            format="json",
+        )
+        assert added.status_code == status.HTTP_200_OK, added.data
+        assert CycleIssue.objects.filter(cycle=current).count() == 2
+
+        # Transfer only works once the cycle has ended.
+        Cycle.objects.filter(pk=current.pk).update(
+            start_date=timezone.now() - timedelta(days=8), end_date=timezone.now() - timedelta(days=1)
+        )
+        transfer = bot_client.post(
+            _v1(workspace.slug, project.id, f"cycles/{current.id}/transfer-issues/"),
+            {"new_cycle_id": str(following.id)},
+            format="json",
+        )
+        assert transfer.status_code == status.HTTP_200_OK, transfer.data
+        assert CycleIssue.objects.filter(cycle=following).count() == 2
+
+        # Removing a work item from a cycle stays refused.
+        remove = bot_client.delete(
+            _v1(workspace.slug, project.id, f"cycles/{following.id}/cycle-issues/{items[0].id}/")
+        )
+        assert remove.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIBotModuleAccess:
+    def test_bot_reads_creates_updates_modules_and_adds_work_items(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        Project.objects.filter(pk=project.pk).update(module_view=True)
+        bot_id, bot_client = bot
+        human_module = Module.objects.create(name="Human module", project=project, workspace=workspace)
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+
+        listing = bot_client.get(_v1(workspace.slug, project.id, "modules/"))
+        assert listing.status_code == status.HTTP_200_OK, listing.data
+        assert str(human_module.id) in {str(module["id"]) for module in listing.data["results"]}
+
+        created = bot_client.post(
+            _v1(workspace.slug, project.id, "modules/"),
+            {"name": "M1", "status": "planned", "external_source": "plane-planner", "external_id": "plan/M1"},
+            format="json",
+        )
+        assert created.status_code == status.HTTP_201_CREATED, created.data
+
+        url = _v1(workspace.slug, project.id, f"modules/{created.data['id']}/")
+        response = bot_client.patch(
+            url,
+            {
+                "name": "M1 - Bot writes",
+                "description": "Serves R4",
+                "status": "in-progress",
+                "start_date": "2026-10-05",
+                "target_date": "2026-10-25",
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+        assert bot_client.get(url).status_code == status.HTTP_200_OK
+
+        added = bot_client.post(
+            _v1(workspace.slug, project.id, f"modules/{created.data['id']}/module-issues/"),
+            {"issues": [str(item.id)]},
+            format="json",
+        )
+        assert added.status_code == status.HTTP_200_OK, added.data
+        assert ModuleIssue.objects.filter(module_id=created.data["id"], issue=item).exists()
+
+    def test_bot_cannot_delete_archive_or_change_other_module_fields(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        module = _set_created_by(Module.objects.create(name="M1", project=project, workspace=workspace), bot_id)
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+        ModuleIssue.objects.create(module=module, issue=item, project=project, workspace=workspace)
+        url = _v1(workspace.slug, project.id, f"modules/{module.id}/")
+
+        for body in ({"lead": str(create_user.id)}, {"name": "Renamed", "members": [str(create_user.id)]}, {}):
+            response = bot_client.patch(url, body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+        assert bot_client.delete(url).status_code == status.HTTP_403_FORBIDDEN
+        archive = bot_client.post(_v1(workspace.slug, project.id, f"modules/{module.id}/archive/"))
+        assert archive.status_code == status.HTTP_403_FORBIDDEN
+        remove = bot_client.delete(_v1(workspace.slug, project.id, f"modules/{module.id}/module-issues/{item.id}/"))
+        assert remove.status_code == status.HTTP_403_FORBIDDEN
+        module.refresh_from_db()
+        assert module.name == "M1"
+        assert module.archived_at is None
+        assert ModuleIssue.objects.filter(module=module, issue=item).exists()
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIBotLabelAccess:
+    def test_bot_reads_and_creates_labels_but_cannot_change_them(
+        self, workspace, project, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        human_label = Label.objects.create(name="bug", project=project, workspace=workspace)
+
+        listing = bot_client.get(_v1(workspace.slug, project.id, "labels/"))
+        assert listing.status_code == status.HTTP_200_OK, listing.data
+        assert str(human_label.id) in {str(label["id"]) for label in listing.data["results"]}
+
+        created = bot_client.post(
+            _v1(workspace.slug, project.id, "labels/"), {"name": "lane:fork", "color": "#3a86ff"}, format="json"
+        )
+        assert created.status_code == status.HTTP_201_CREATED, created.data
+
+        for label_id in (created.data["id"], human_label.id):
+            url = _v1(workspace.slug, project.id, f"labels/{label_id}/")
+            assert bot_client.get(url).status_code == status.HTTP_200_OK
+            assert bot_client.patch(url, {"name": "renamed"}, format="json").status_code == status.HTTP_403_FORBIDDEN
+            assert bot_client.delete(url).status_code == status.HTTP_403_FORBIDDEN
+        assert Label.objects.filter(pk=human_label.id, name="bug").exists()
+        assert Label.objects.filter(pk=created.data["id"], name="lane:fork").exists()
+
+    def test_human_still_updates_and_deletes_labels(self, workspace, project, human_client, monkeypatch):
+        _stub_tasks(monkeypatch)
+        label = Label.objects.create(name="bug", project=project, workspace=workspace)
+        url = _v1(workspace.slug, project.id, f"labels/{label.id}/")
+
+        assert human_client.patch(url, {"name": "defect"}, format="json").status_code == status.HTTP_200_OK
+        assert human_client.delete(url).status_code == status.HTTP_204_NO_CONTENT
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIBotEstimateAccess:
+    def test_bot_creates_the_first_estimate_its_points_and_sets_it_on_the_project(
+        self, workspace, project, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        _bot_id, bot_client = bot
+        assert bot_client.get(_v1(workspace.slug, project.id, "estimates/")).status_code == status.HTTP_404_NOT_FOUND
+
+        created = bot_client.post(
+            _v1(workspace.slug, project.id, "estimates/"), {"name": "Points", "type": "points"}, format="json"
+        )
+        assert created.status_code == status.HTTP_201_CREATED, created.data
+        estimate_id = created.data["id"]
+
+        # The project keeps one estimate; a second POST answers 409 with the bot's estimate id.
+        again = bot_client.post(
+            _v1(workspace.slug, project.id, "estimates/"), {"name": "Points", "type": "points"}, format="json"
+        )
+        assert again.status_code == status.HTTP_409_CONFLICT
+        assert str(again.data["id"]) == str(estimate_id)
+
+        points_url = _v1(workspace.slug, project.id, f"estimates/{estimate_id}/estimate-points/")
+        points = bot_client.post(
+            points_url, {"estimate_points": [{"key": 1, "value": "1"}, {"key": 2, "value": "3"}]}, format="json"
+        )
+        assert points.status_code == status.HTTP_201_CREATED, points.data
+        assert bot_client.get(points_url).status_code == status.HTTP_200_OK
+        assert bot_client.get(_v1(workspace.slug, project.id, "estimates/")).status_code == status.HTTP_200_OK
+
+        response = bot_client.patch(
+            f"/api/v1/workspaces/{workspace.slug}/projects/{project.id}/", {"estimate": estimate_id}, format="json"
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+        project.refresh_from_db()
+        assert str(project.estimate_id) == str(estimate_id)
+
+        # Points and the estimate itself cannot be changed or deleted.
+        point_id = points.data[0]["id"]
+        point_url = _v1(workspace.slug, project.id, f"estimates/{estimate_id}/estimate-points/{point_id}/")
+        assert bot_client.patch(point_url, {"value": "8"}, format="json").status_code == status.HTTP_403_FORBIDDEN
+        assert bot_client.delete(point_url).status_code == status.HTTP_403_FORBIDDEN
+        estimate_url = _v1(workspace.slug, project.id, "estimates/")
+        assert bot_client.patch(estimate_url, {"name": "X"}, format="json").status_code == status.HTTP_403_FORBIDDEN
+        assert bot_client.delete(estimate_url).status_code == status.HTTP_403_FORBIDDEN
+        assert EstimatePoint.objects.filter(pk=point_id, value="1").exists()
+
+    def test_bot_cannot_touch_an_estimate_created_by_a_human(self, workspace, project, create_user, bot, monkeypatch):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        human_estimate = _set_created_by(
+            Estimate.objects.create(name="Hours", type="time", project=project, workspace=workspace), create_user.id
+        )
+        project_url = f"/api/v1/workspaces/{workspace.slug}/projects/{project.id}/"
+
+        # A human estimate exists: no new estimate, no points on it.
+        created = bot_client.post(
+            _v1(workspace.slug, project.id, "estimates/"), {"name": "Points", "type": "points"}, format="json"
+        )
+        assert created.status_code == status.HTTP_403_FORBIDDEN
+        points = bot_client.post(
+            _v1(workspace.slug, project.id, f"estimates/{human_estimate.id}/estimate-points/"),
+            {"estimate_points": [{"key": 1, "value": "1"}]},
+            format="json",
+        )
+        assert points.status_code == status.HTTP_403_FORBIDDEN
+
+        # The project uses the human estimate: the bot cannot replace it, not even with its own.
+        Project.objects.filter(pk=project.pk).update(estimate=human_estimate)
+        own = _set_created_by(
+            Estimate.objects.create(name="Points", type="points", project=project, workspace=workspace), bot_id
+        )
+        for body in ({"estimate": str(own.id)}, {"estimate": None}):
+            response = bot_client.patch(project_url, body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+        project.refresh_from_db()
+        assert project.estimate_id == human_estimate.id
+
+    def test_bot_project_patch_is_limited_to_an_estimate_of_the_project(
+        self, workspace, project, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        other_project = Project.objects.create(
+            name="Other Project", identifier="OTH", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        own = _set_created_by(
+            Estimate.objects.create(name="Points", type="points", project=project, workspace=workspace), bot_id
+        )
+        elsewhere = _set_created_by(
+            Estimate.objects.create(name="Points", type="points", project=other_project, workspace=workspace), bot_id
+        )
+        project_url = f"/api/v1/workspaces/{workspace.slug}/projects/{project.id}/"
+
+        for body in (
+            {"estimate": str(own.id), "name": "Renamed"},
+            {"name": "Renamed"},
+            {"estimate": str(elsewhere.id)},
+            {"estimate": str(uuid4())},
+            {"estimate": "not-a-uuid"},
+            {"estimate": None},
+            {},
+        ):
+            response = bot_client.patch(project_url, body, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+        assert bot_client.get(project_url).status_code == status.HTTP_403_FORBIDDEN
+        assert bot_client.delete(project_url).status_code == status.HTTP_403_FORBIDDEN
+        project.refresh_from_db()
+        assert project.estimate_id is None
+        assert project.name == "AI Access Project"
+
+    def test_human_still_manages_estimates_and_the_project(self, workspace, project, human_client, bot, monkeypatch):
+        _stub_tasks(monkeypatch)
+        bot_id, _bot_client = bot
+        bot_estimate = _set_created_by(
+            Estimate.objects.create(name="Points", type="points", project=project, workspace=workspace), bot_id
+        )
+        project_url = f"/api/v1/workspaces/{workspace.slug}/projects/{project.id}/"
+
+        response = human_client.patch(
+            project_url, {"estimate": str(bot_estimate.id), "name": "Renamed by a human"}, format="json"
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+        points = human_client.post(
+            _v1(workspace.slug, project.id, f"estimates/{bot_estimate.id}/estimate-points/"),
+            {"estimate_points": [{"key": 1, "value": "5"}]},
+            format="json",
+        )
+        assert points.status_code == status.HTTP_201_CREATED, points.data
+        project.refresh_from_db()
+        assert project.estimate_id == bot_estimate.id
+        assert project.name == "Renamed by a human"

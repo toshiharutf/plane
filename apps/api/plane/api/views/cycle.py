@@ -34,7 +34,7 @@ from plane.api.serializers import (
     CycleUpdateSerializer,
     IssueSerializer,
 )
-from plane.app.permissions import ProjectEntityPermission
+from plane.app.permissions import ProjectEntityOrAIBotCyclePermission, ProjectEntityPermission
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.db.models import (
     Cycle,
@@ -50,6 +50,7 @@ from plane.utils.cycle_transfer_issues import transfer_cycle_issues
 from plane.utils.order_queryset import CYCLE_ORDER_BY_ALLOWLIST, ISSUE_ORDER_BY_ALLOWLIST, sanitize_order_by
 from plane.utils.host import base_host
 from .base import BaseAPIView
+from .issue import project_visibility_q
 from plane.bgtasks.webhook_task import model_activity
 from plane.utils.openapi.decorators import cycle_docs
 from plane.utils.openapi import (
@@ -85,17 +86,14 @@ class CycleListCreateAPIEndpoint(BaseAPIView):
     serializer_class = CycleSerializer
     model = Cycle
     webhook_event = "cycle"
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotCyclePermission]
     use_read_replica = True
 
     def get_queryset(self):
         return (
             Cycle.objects.filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
-            .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
-            )
+            .filter(project_visibility_q(self.request.user, self.kwargs.get("slug")))
             .select_related("project")
             .select_related("workspace")
             .select_related("owned_by")
@@ -413,17 +411,14 @@ class CycleDetailAPIEndpoint(BaseAPIView):
     serializer_class = CycleSerializer
     model = Cycle
     webhook_event = "cycle"
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotCyclePermission]
     use_read_replica = True
 
     def get_queryset(self):
         return (
             Cycle.objects.filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
-            .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
-            )
+            .filter(project_visibility_q(self.request.user, self.kwargs.get("slug")))
             .select_related("project")
             .select_related("workspace")
             .select_related("owned_by")
@@ -855,7 +850,7 @@ class CycleIssueListCreateAPIEndpoint(BaseAPIView):
     serializer_class = CycleIssueSerializer
     model = CycleIssue
     webhook_event = "cycle_issue"
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotCyclePermission]
     use_read_replica = True
 
     def get_queryset(self):
@@ -868,10 +863,7 @@ class CycleIssueListCreateAPIEndpoint(BaseAPIView):
             )
             .filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
-            .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
-            )
+            .filter(project_visibility_q(self.request.user, self.kwargs.get("slug")))
             .filter(cycle_id=self.kwargs.get("cycle_id"))
             .select_related("project")
             .select_related("workspace")
@@ -1176,7 +1168,7 @@ class TransferCycleIssueAPIEndpoint(BaseAPIView):
 
     """
 
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotCyclePermission]
 
     @cycle_docs(
         operation_id="transfer_cycle_work_items",

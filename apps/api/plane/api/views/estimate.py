@@ -8,7 +8,7 @@ from rest_framework import status
 from drf_spectacular.utils import OpenApiRequest, OpenApiResponse
 
 # Module imports
-from plane.app.permissions.project import ProjectEntityPermission
+from plane.app.permissions import ProjectEntityOrAIBotEstimatePermission
 from plane.api.views.base import BaseAPIView
 from plane.db.models import Estimate, EstimatePoint, Project, Workspace
 from plane.api.serializers import EstimateSerializer, EstimatePointSerializer
@@ -28,7 +28,7 @@ from plane.utils.openapi import (
 
 
 class ProjectEstimateAPIEndpoint(BaseAPIView):
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotEstimatePermission]
     model = Estimate
     serializer_class = EstimateSerializer
 
@@ -137,7 +137,7 @@ class ProjectEstimateAPIEndpoint(BaseAPIView):
 class EstimatePointListCreateAPIEndpoint(BaseAPIView):
     """List and bulk create estimate points for an estimate."""
 
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotEstimatePermission]
     model = EstimatePoint
     serializer_class = EstimatePointSerializer
 
@@ -234,7 +234,7 @@ class EstimatePointListCreateAPIEndpoint(BaseAPIView):
 class EstimatePointDetailAPIEndpoint(BaseAPIView):
     """Update and delete a single estimate point."""
 
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotEstimatePermission]
     model = EstimatePoint
     serializer_class = EstimatePointSerializer
 
