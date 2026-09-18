@@ -25,6 +25,7 @@ import { IssueTypeSwitcher } from "@/components/issues/issue-type-switcher";
 // services
 import { WorkItemVersionService } from "@/services/issue";
 // local components
+import { HumanRequestBanner } from "../human-request-banner";
 import type { TIssueOperations } from "../issue-detail";
 import { IssueParentDetail } from "../issue-detail/parent";
 import { IssueReaction } from "../issue-detail/reactions";
@@ -82,6 +83,9 @@ export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetai
 
   return (
     <div className="space-y-2">
+      {!isArchived && (
+        <HumanRequestBanner workspaceSlug={workspaceSlug} projectId={issue.project_id} issueId={issueId} />
+      )}
       {issue.parent_id && (
         <IssueParentDetail
           workspaceSlug={workspaceSlug}
