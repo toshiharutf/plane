@@ -91,5 +91,5 @@ from .sticky import Sticky
 
 from .description import Description, DescriptionVersion
 
-from .ai_usage import AIUsageRecord, WorkItemAIUsage
+from .ai_usage import AIUsageRecord
 from .human_request import HumanRequest, HumanRequestDecision, HumanRequestKind

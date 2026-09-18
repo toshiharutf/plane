@@ -2,18 +2,23 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
+# Python imports
+import uuid
+from datetime import date
+
 # Django imports
 from django.db import transaction
 
 # Third party imports
-from drf_spectacular.utils import OpenApiRequest, OpenApiResponse, extend_schema
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiRequest, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 
 # Module imports
-from plane.api.serializers import WorkItemAIUsageSerializer
-from plane.app.permissions import ProjectEntityOrAIBotAIUsagePermission
-from plane.db.models import Issue, WorkItemAIUsage
+from plane.api.serializers import AIUsageHistorySerializer, WorkItemAIUsageSerializer
+from plane.app.permissions import ProjectEntityOrAIBotAIUsagePermission, WorkspaceEntityPermission
+from plane.db.models import AIUsageRecord, Issue, StateGroup
 from plane.utils.openapi import (
     CURSOR_PARAMETER,
     INVALID_REQUEST_RESPONSE,
@@ -29,16 +34,16 @@ from .issue import project_visibility_q
 
 
 class WorkItemAIUsageListCreateAPIEndpoint(BaseAPIView):
-    """Work Item AI Usage List and Create Endpoint"""
+    """Work Item AI Usage List and Create Endpoint, backed by ``AIUsageRecord``."""
 
     serializer_class = WorkItemAIUsageSerializer
-    model = WorkItemAIUsage
+    model = AIUsageRecord
     permission_classes = [ProjectEntityOrAIBotAIUsagePermission]
     use_read_replica = True
 
     def get_queryset(self):
         return (
-            WorkItemAIUsage.objects.filter(workspace__slug=self.kwargs.get("slug"))
+            AIUsageRecord.objects.filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
             .filter(issue_id=self.kwargs.get("issue_id"))
             .filter(project_visibility_q(self.request.user, self.kwargs.get("slug")))
@@ -109,12 +114,12 @@ class WorkItemAIUsageListCreateAPIEndpoint(BaseAPIView):
                 instance = None
                 if session_id:
                     instance = (
-                        WorkItemAIUsage.objects.select_for_update()
+                        AIUsageRecord.objects.select_for_update()
                         .filter(issue=issue, session_id=session_id, model=data["model"])
                         .first()
                     )
                 if instance is None:
-                    instance = WorkItemAIUsage(issue=issue, project_id=project_id)
+                    instance = AIUsageRecord(issue=issue, project_id=project_id)
                 for field, value in data.items():
                     setattr(instance, field, value)
                 instance.save()
@@ -122,3 +127,73 @@ class WorkItemAIUsageListCreateAPIEndpoint(BaseAPIView):
 
         response = WorkItemAIUsageSerializer(usages, many=True).data
         return Response(response if many else response[0], status=status.HTTP_201_CREATED)
+
+
+def _parse_date(value, name):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"{name} must be a date (YYYY-MM-DD)")
+
+
+class AIUsageHistoryAPIEndpoint(BaseAPIView):
+    """AI usage records of completed work items across the workspace, newest first."""
+
+    serializer_class = AIUsageHistorySerializer
+    model = AIUsageRecord
+    permission_classes = [WorkspaceEntityPermission]
+    use_read_replica = True
+
+    @extend_schema(
+        operation_id="list_ai_usage_history",
+        summary="List AI usage history",
+        description=(
+            "List the AI usage records of completed work items: title, model, effort, duration, "
+            "tokens by kind and api_cost_usd per session. Filter by project_ids (comma separated) "
+            "and by created_at date with date_from and date_to (YYYY-MM-DD, inclusive)."
+        ),
+        tags=["Work Item AI Usage"],
+        parameters=[
+            WORKSPACE_SLUG_PARAMETER,
+            OpenApiParameter(name="project_ids", type=OpenApiTypes.STR, location=OpenApiParameter.QUERY),
+            OpenApiParameter(name="date_from", type=OpenApiTypes.DATE, location=OpenApiParameter.QUERY),
+            OpenApiParameter(name="date_to", type=OpenApiTypes.DATE, location=OpenApiParameter.QUERY),
+            CURSOR_PARAMETER,
+            PER_PAGE_PARAMETER,
+        ],
+        responses={200: AIUsageHistorySerializer(many=True), 400: INVALID_REQUEST_RESPONSE},
+    )
+    def get(self, request, slug):
+        """List the AI usage history of completed work items."""
+        try:
+            project_ids = [uuid.UUID(pid) for pid in request.GET.get("project_ids", "").split(",") if pid.strip()]
+            date_from = _parse_date(request.GET.get("date_from"), "date_from")
+            date_to = _parse_date(request.GET.get("date_to"), "date_to")
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = (
+            AIUsageRecord.objects.filter(workspace__slug=slug)
+            .filter(project_visibility_q(request.user, slug))
+            .filter(
+                project__archived_at__isnull=True,
+                issue__deleted_at__isnull=True,
+                issue__state__group=StateGroup.COMPLETED.value,
+            )
+            .select_related("project", "issue")
+        )
+        if project_ids:
+            queryset = queryset.filter(project_id__in=project_ids)
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+
+        return self.paginate(
+            request=request,
+            queryset=queryset.distinct(),
+            order_by="-created_at",
+            on_results=lambda records: AIUsageHistorySerializer(records, many=True, fields=self.fields).data,
+        )

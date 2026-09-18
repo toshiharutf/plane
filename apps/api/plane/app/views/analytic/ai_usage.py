@@ -3,7 +3,7 @@
 # See the LICENSE file for details.
 
 # Django imports
-from django.db.models import Sum
+from django.db.models import F, Sum
 from django.http import HttpRequest
 
 # Third party imports
@@ -13,7 +13,7 @@ from rest_framework.response import Response
 # Module imports
 from plane.app.permissions import ROLE, allow_permission
 from plane.app.views.base import BaseAPIView
-from plane.db.models import Issue, StateGroup, WorkItemAIUsage
+from plane.db.models import Issue, StateGroup, AIUsageRecord
 from plane.utils.date_utils import get_analytics_filters
 
 TOKEN_FIELDS = (
@@ -27,7 +27,10 @@ TOKEN_FIELDS = (
 class WorkspaceAIUsageAnalyticsEndpoint(BaseAPIView):
     """Token usage per AI model and completed work item.
 
-    Usage rows are summed per (model, work item). Only completed, non-archived,
+    ``AIUsageRecord`` rows are summed per (model, work item). Cache writes (5m
+    and 1h) are reported as ``cache_creation_input_tokens`` and cache hits as
+    ``cache_read_input_tokens``; ``api_cost_usd`` is the summed API price
+    (null when no row of the item has a known price). Only completed, non-archived,
     non-draft work items in active projects the requester is a member of are
     included; ``project_ids`` (comma separated) narrows the projects further.
     """
@@ -47,10 +50,16 @@ class WorkspaceAIUsageAnalyticsEndpoint(BaseAPIView):
         )
 
         rows = (
-            WorkItemAIUsage.objects.filter(issue_id__in=completed_issue_ids)
+            AIUsageRecord.objects.filter(issue_id__in=completed_issue_ids)
             .order_by()
             .values("model", "issue_id")
-            .annotate(**{field: Sum(field) for field in TOKEN_FIELDS})
+            .annotate(
+                input_tokens=Sum("input_tokens"),
+                output_tokens=Sum("output_tokens"),
+                cache_creation_input_tokens=Sum(F("cache_write_5m_tokens") + F("cache_write_1h_tokens")),
+                cache_read_input_tokens=Sum("cache_read_tokens"),
+                api_cost_usd=Sum("api_cost_usd"),
+            )
         )
 
         issues = {
@@ -78,6 +87,7 @@ class WorkspaceAIUsageAnalyticsEndpoint(BaseAPIView):
                     "name": issue["name"],
                     "completed_at": issue["completed_at"],
                     **{field: row[field] or 0 for field in TOKEN_FIELDS},
+                    "api_cost_usd": row["api_cost_usd"],
                 }
             )
             for field in TOKEN_FIELDS:

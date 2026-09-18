@@ -39,7 +39,6 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
 import type { TIssueOperations } from "../issue-detail";
 import { IssueAIModelProperty } from "../issue-detail/ai-model-select";
-import { IssueAIUsageProperties } from "../issue-detail/ai-usage-properties";
 import { IssueCycleSelect } from "../issue-detail/cycle-select";
 import { IssueDatetimeTimeInput } from "../issue-detail/datetime-time-input";
 import { IssueLabel } from "../issue-detail/label";
@@ -268,8 +267,6 @@ export const PeekOverviewProperties = observer(function PeekOverviewProperties(p
         <SidebarPropertyListItem icon={LabelPropertyIcon} label={t("common.labels")}>
           <IssueLabel workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} disabled={disabled} />
         </SidebarPropertyListItem>
-
-        <IssueAIUsageProperties workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
       </div>
     </div>
   );

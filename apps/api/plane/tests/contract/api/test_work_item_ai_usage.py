@@ -4,11 +4,14 @@
 
 """Public API (``/api/v1``) for reporting AI token usage on a work item."""
 
+from datetime import timedelta
+
 import pytest
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from plane.db.models import Issue, IssueAssignee, Project, ProjectMember, State, WorkItemAIUsage
+from plane.db.models import AIUsageRecord, Issue, IssueAssignee, Project, ProjectMember, State
 
 
 USAGE = {
@@ -97,7 +100,7 @@ class TestWorkItemAIUsage:
 
         assert response.status_code == status.HTTP_201_CREATED, response.data
         assert len(response.data) == 2
-        assert set(WorkItemAIUsage.objects.filter(issue=issue).values_list("model", flat=True)) == {
+        assert set(AIUsageRecord.objects.filter(issue=issue).values_list("model", flat=True)) == {
             "claude-opus-5",
             "claude-haiku-4-5-20251001",
         }
@@ -113,7 +116,7 @@ class TestWorkItemAIUsage:
 
         assert second.status_code == status.HTTP_201_CREATED, second.data
         assert second.data["id"] == first.data["id"]
-        rows = WorkItemAIUsage.objects.filter(issue=issue)
+        rows = AIUsageRecord.objects.filter(issue=issue)
         assert rows.count() == 1
         assert rows.get().output_tokens == 9999
 
@@ -125,7 +128,7 @@ class TestWorkItemAIUsage:
         human_client.post(url, payload, format="json")
         human_client.post(url, payload, format="json")
 
-        assert WorkItemAIUsage.objects.filter(issue=issue).count() == 2
+        assert AIUsageRecord.objects.filter(issue=issue).count() == 2
 
     def test_rejects_negative_tokens_and_missing_model(self, workspace, project, state, create_user, human_client):
         issue = _create_issue(project, workspace, state, create_user, "Task")
@@ -140,7 +143,7 @@ class TestWorkItemAIUsage:
         assert missing_model.status_code == status.HTTP_400_BAD_REQUEST
         assert "model" in missing_model.data
         assert mixed_list.status_code == status.HTTP_400_BAD_REQUEST
-        assert not WorkItemAIUsage.objects.filter(issue=issue).exists()
+        assert not AIUsageRecord.objects.filter(issue=issue).exists()
 
     def test_same_session_with_another_model_adds_a_row(self, workspace, project, state, create_user, human_client):
         issue = _create_issue(project, workspace, state, create_user, "Task")
@@ -150,7 +153,7 @@ class TestWorkItemAIUsage:
         response = human_client.post(url, {**USAGE, "model": "claude-haiku-4-5", "input_tokens": 7}, format="json")
 
         assert response.status_code == status.HTTP_201_CREATED, response.data
-        rows = WorkItemAIUsage.objects.filter(issue=issue, session_id=USAGE["session_id"])
+        rows = AIUsageRecord.objects.filter(issue=issue, session_id=USAGE["session_id"])
         assert {row.model: row.input_tokens for row in rows} == {"claude-opus-5": 1200, "claude-haiku-4-5": 7}
 
     def test_same_session_on_another_work_item_is_not_merged(
@@ -165,8 +168,8 @@ class TestWorkItemAIUsage:
         )
 
         assert response.status_code == status.HTTP_201_CREATED, response.data
-        assert WorkItemAIUsage.objects.get(issue=first).output_tokens == USAGE["output_tokens"]
-        assert WorkItemAIUsage.objects.get(issue=second).output_tokens == 1
+        assert AIUsageRecord.objects.get(issue=first).output_tokens == USAGE["output_tokens"]
+        assert AIUsageRecord.objects.get(issue=second).output_tokens == 1
 
     def test_empty_list_payload_is_rejected(self, workspace, project, state, create_user, human_client):
         issue = _create_issue(project, workspace, state, create_user, "Task")
@@ -174,7 +177,7 @@ class TestWorkItemAIUsage:
         response = human_client.post(_url(workspace.slug, project.id, issue.id), [], format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert not WorkItemAIUsage.objects.filter(issue=issue).exists()
+        assert not AIUsageRecord.objects.filter(issue=issue).exists()
 
     def test_token_counts_default_to_zero(self, workspace, project, state, create_user, human_client):
         issue = _create_issue(project, workspace, state, create_user, "Task")
@@ -197,7 +200,7 @@ class TestWorkItemAIUsage:
         response = human_client.post(_url(workspace.slug, other.id, issue.id), USAGE, format="json")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert not WorkItemAIUsage.objects.filter(issue=issue).exists()
+        assert not AIUsageRecord.objects.filter(issue=issue).exists()
 
     def test_unknown_work_item_returns_404(self, workspace, project, human_client):
         response = human_client.post(
@@ -219,18 +222,166 @@ class TestWorkItemAIUsage:
         response = bot_client.post(_url(workspace.slug, project.id, issue.id), USAGE, format="json")
 
         assert response.status_code == status.HTTP_201_CREATED, response.data
-        assert str(WorkItemAIUsage.objects.get(issue=issue).created_by_id) == bot_id
+        assert str(AIUsageRecord.objects.get(issue=issue).created_by_id) == bot_id
 
     def test_non_assigned_bot_gets_403_but_can_read(self, workspace, project, state, create_user, session_client):
         _bot_id, bot_client = _create_bot(session_client, workspace, "Other AI")
         issue = _create_issue(project, workspace, state, create_user, "Human task", [str(create_user.id)])
-        WorkItemAIUsage.objects.create(issue=issue, project=project, model="claude-opus-5", input_tokens=5)
+        AIUsageRecord.objects.create(issue=issue, project=project, model="claude-opus-5", input_tokens=5)
         url = _url(workspace.slug, project.id, issue.id)
 
         write = bot_client.post(url, USAGE, format="json")
         read = bot_client.get(url)
 
         assert write.status_code == status.HTTP_403_FORBIDDEN
-        assert WorkItemAIUsage.objects.filter(issue=issue).count() == 1
+        assert AIUsageRecord.objects.filter(issue=issue).count() == 1
         assert read.status_code == status.HTTP_200_OK
         assert len(read.data["results"]) == 1
+
+    def test_ac1_legacy_post_is_stored_as_ai_usage_record(self, workspace, project, state, create_user, human_client):
+        issue = _create_issue(project, workspace, state, create_user, "Legacy report")
+        legacy = {field: USAGE[field] for field in ("model", *TOKEN_FIELDS)}
+
+        response = human_client.post(_url(workspace.slug, project.id, issue.id), legacy, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        record = AIUsageRecord.objects.get(issue=issue)
+        assert (record.cache_write_5m_tokens, record.cache_write_1h_tokens, record.cache_read_tokens) == (
+            0,
+            56000,
+            789000,
+        )
+        assert record.split_unknown is True
+        assert record.issue_title == "Legacy report"
+        assert record.api_cost_usd is not None
+        assert response.data["cache_write_1h_tokens"] == 56000
+        assert response.data["split_unknown"] is True
+        assert response.data["api_cost_usd"] == str(record.api_cost_usd)
+        assert response.data["price_version"] == record.price_version
+
+    def test_ac1_new_fields_are_stored_and_returned(self, workspace, project, state, create_user, human_client):
+        issue = _create_issue(project, workspace, state, create_user, "New report")
+        payload = {
+            "model": "claude-opus-5",
+            "session_id": "s-new",
+            "effort": "high",
+            "duration_seconds": 620,
+            "input_tokens": 10,
+            "output_tokens": 20,
+            "cache_write_5m_tokens": 30,
+            "cache_write_1h_tokens": 40,
+            "cache_read_tokens": 50,
+            "usage_5h_pct": 12.5,
+            "usage_weekly_pct": 3.25,
+        }
+
+        response = human_client.post(_url(workspace.slug, project.id, issue.id), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        for field, value in payload.items():
+            assert response.data[field] == value
+        assert response.data["cache_creation_input_tokens"] == 70
+        assert response.data["cache_read_input_tokens"] == 50
+        assert response.data["split_unknown"] is False
+        listed = human_client.get(_url(workspace.slug, project.id, issue.id))
+        assert listed.data["results"][0]["effort"] == "high"
+
+
+def _history_url(slug):
+    return f"/api/v1/workspaces/{slug}/ai-usage/history/"
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIUsageHistory:
+    @pytest.fixture
+    def done(self, workspace, project):
+        return State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+
+    def test_ac2_lists_completed_items_with_cost(self, workspace, project, state, done, create_user, human_client):
+        finished = _create_issue(project, workspace, done, create_user, "Finished")
+        open_issue = _create_issue(project, workspace, state, create_user, "Still open")
+        record = AIUsageRecord.objects.create(
+            issue=finished,
+            project=project,
+            model="claude-opus-5",
+            effort="high",
+            duration_seconds=90,
+            input_tokens=1_000_000,
+            output_tokens=100_000,
+            cache_write_5m_tokens=1,
+            cache_write_1h_tokens=2,
+            cache_read_tokens=3,
+        )
+        AIUsageRecord.objects.create(issue=open_issue, project=project, model="claude-opus-5", input_tokens=1)
+
+        response = human_client.get(_history_url(workspace.slug), {"project_ids": str(project.id)})
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        rows = response.data["results"]
+        assert [str(row["id"]) for row in rows] == [str(record.id)]
+        row = rows[0]
+        assert row["issue_title"] == "Finished"
+        assert (row["model"], row["effort"], row["duration_seconds"]) == ("claude-opus-5", "high", 90)
+        assert (
+            row["input_tokens"],
+            row["output_tokens"],
+            row["cache_write_5m_tokens"],
+            row["cache_write_1h_tokens"],
+            row["cache_read_tokens"],
+        ) == (1_000_000, 100_000, 1, 2, 3)
+        assert row["api_cost_usd"] == str(record.api_cost_usd)
+        assert row["created_at"]
+        assert row["project_identifier"] == "AIU"
+
+    def test_ac2_filters_by_project_and_date(self, workspace, project, done, create_user, human_client):
+        other = Project.objects.create(
+            name="Other Project", identifier="AIO", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        ProjectMember.objects.create(workspace=workspace, project=other, member=create_user, role=20, is_active=True)
+        other_done = State.objects.create(name="Done", group="completed", project=other, workspace=workspace)
+        mine = AIUsageRecord.objects.create(
+            issue=_create_issue(project, workspace, done, create_user, "Mine"), project=project, model="claude-opus-5"
+        )
+        old = AIUsageRecord.objects.create(
+            issue=_create_issue(project, workspace, done, create_user, "Old"), project=project, model="claude-opus-5"
+        )
+        AIUsageRecord.objects.filter(id=old.id).update(created_at=timezone.now() - timedelta(days=10))
+        theirs = AIUsageRecord.objects.create(
+            issue=_create_issue(other, workspace, other_done, create_user, "Theirs"),
+            project=other,
+            model="claude-opus-5",
+        )
+        url = _history_url(workspace.slug)
+        since = (timezone.now() - timedelta(days=1)).date().isoformat()
+
+        by_project = human_client.get(url, {"project_ids": str(project.id)})
+        by_date = human_client.get(url, {"date_from": since})
+        until = human_client.get(url, {"date_to": (timezone.now() - timedelta(days=5)).date().isoformat()})
+        everything = human_client.get(url)
+        bad = human_client.get(url, {"date_from": "yesterday"})
+
+        assert {str(row["id"]) for row in by_project.data["results"]} == {str(mine.id), str(old.id)}
+        assert {str(row["id"]) for row in by_date.data["results"]} == {str(mine.id), str(theirs.id)}
+        assert [str(row["id"]) for row in until.data["results"]] == [str(old.id)]
+        assert len(everything.data["results"]) == 3
+        assert bad.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_hides_projects_the_user_is_not_member_of(self, workspace, project, done, create_user, human_client):
+        hidden = Project.objects.create(
+            name="Hidden", identifier="HID", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        hidden_done = State.objects.create(name="Done", group="completed", project=hidden, workspace=workspace)
+        AIUsageRecord.objects.create(
+            issue=_create_issue(hidden, workspace, hidden_done, create_user, "Hidden"),
+            project=hidden,
+            model="claude-opus-5",
+        )
+
+        response = human_client.get(_history_url(workspace.slug))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["results"] == []
+
+    def test_unauthenticated_gets_401(self, workspace):
+        assert APIClient().get(_history_url(workspace.slug)).status_code == status.HTTP_401_UNAUTHORIZED

@@ -69,4 +69,4 @@ from .member import (
 )
 from .sticky import StickySerializer
 from .page import PageSerializer, PageDetailSerializer
-from .ai_usage import WorkItemAIUsageSerializer
+from .ai_usage import AIUsageHistorySerializer, WorkItemAIUsageSerializer
