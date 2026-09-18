@@ -28,4 +28,9 @@ from .ai_bot import (
     ProjectEntityOrAIBotRelationPermission,
     ProjectEntityOrAIBotAIUsagePermission,
     ProjectEntityOrAIBotPagePermission,
+    ProjectEntityOrAIBotCyclePermission,
+    ProjectEntityOrAIBotModulePermission,
+    ProjectMemberOrAIBotLabelPermission,
+    ProjectEntityOrAIBotEstimatePermission,
+    ProjectBaseOrAIBotEstimatePermission,
 )

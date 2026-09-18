@@ -65,7 +65,7 @@ from plane.app.permissions import (
     ProjectLiteOrAIBotCommentPermission,
     ProjectEntityOrAIBotLinkPermission,
     ProjectEntityOrAIBotRelationPermission,
-    ProjectMemberPermission,
+    ProjectMemberOrAIBotLabelPermission,
 )
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.db.models import (
@@ -909,17 +909,14 @@ class LabelListCreateAPIEndpoint(BaseAPIView):
 
     serializer_class = LabelSerializer
     model = Label
-    permission_classes = [ProjectMemberPermission]
+    permission_classes = [ProjectMemberOrAIBotLabelPermission]
     use_read_replica = True
 
     def get_queryset(self):
         return (
             Label.objects.filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
-            .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
-            )
+            .filter(project_visibility_q(self.request.user, self.kwargs.get("slug")))
             .filter(project__archived_at__isnull=True)
             .select_related("project")
             .select_related("workspace")
@@ -1035,7 +1032,7 @@ class LabelDetailAPIEndpoint(LabelListCreateAPIEndpoint):
 
     serializer_class = LabelSerializer
     model = Label
-    permission_classes = [ProjectMemberPermission]
+    permission_classes = [ProjectMemberOrAIBotLabelPermission]
     use_read_replica = True
 
     @label_docs(

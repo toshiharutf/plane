@@ -26,7 +26,7 @@ from plane.api.serializers import (
     ModuleCreateSerializer,
     ModuleUpdateSerializer,
 )
-from plane.app.permissions import ProjectEntityPermission
+from plane.app.permissions import ProjectEntityOrAIBotModulePermission, ProjectEntityPermission
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.db.models import (
     Issue,
@@ -41,6 +41,7 @@ from plane.db.models import (
 )
 
 from .base import BaseAPIView
+from .issue import project_visibility_q
 from plane.bgtasks.webhook_task import model_activity
 from plane.utils.host import base_host
 from plane.utils.order_queryset import ISSUE_ORDER_BY_ALLOWLIST, MODULE_ORDER_BY_ALLOWLIST, sanitize_order_by
@@ -81,7 +82,7 @@ class ModuleListCreateAPIEndpoint(BaseAPIView):
     serializer_class = ModuleSerializer
     model = Module
     webhook_event = "module"
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotModulePermission]
     use_read_replica = True
 
     def get_queryset(self):
@@ -330,7 +331,7 @@ class ModuleDetailAPIEndpoint(BaseAPIView):
     """Module Detail Endpoint"""
 
     model = Module
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotModulePermission]
     serializer_class = ModuleSerializer
     webhook_event = "module"
     use_read_replica = True
@@ -589,7 +590,7 @@ class ModuleIssueListCreateAPIEndpoint(BaseAPIView):
     serializer_class = ModuleIssueSerializer
     model = ModuleIssue
     webhook_event = "module_issue"
-    permission_classes = [ProjectEntityPermission]
+    permission_classes = [ProjectEntityOrAIBotModulePermission]
     use_read_replica = True
 
     def get_queryset(self):
@@ -603,10 +604,7 @@ class ModuleIssueListCreateAPIEndpoint(BaseAPIView):
             .filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
             .filter(module_id=self.kwargs.get("module_id"))
-            .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
-            )
+            .filter(project_visibility_q(self.request.user, self.kwargs.get("slug")))
             .filter(project__archived_at__isnull=True)
             .select_related("project")
             .select_related("workspace")

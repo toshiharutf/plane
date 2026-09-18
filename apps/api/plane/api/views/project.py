@@ -42,6 +42,7 @@ from plane.bgtasks.webhook_task import model_activity, webhook_activity
 from plane.utils.exception_logger import log_exception
 from .base import BaseAPIView
 from plane.utils.host import base_host
+from plane.utils.members import is_workspace_ai_agent
 from plane.utils.order_queryset import PROJECT_ORDER_BY_ALLOWLIST, sanitize_order_by
 from plane.api.serializers import (
     ProjectSerializer,
@@ -49,7 +50,11 @@ from plane.api.serializers import (
     ProjectCreateSerializer,
     ProjectUpdateSerializer,
 )
-from plane.app.permissions import ProjectBasePermission, WorkSpaceAdminPermission
+from plane.app.permissions import (
+    ProjectBaseOrAIBotEstimatePermission,
+    ProjectBasePermission,
+    WorkSpaceAdminPermission,
+)
 from plane.utils.openapi import (
     project_docs,
     PROJECT_ID_PARAMETER,
@@ -434,19 +439,20 @@ class ProjectDetailAPIEndpoint(BaseAPIView):
     model = Project
     webhook_event = "project"
 
-    permission_classes = [ProjectBasePermission]
+    permission_classes = [ProjectBaseOrAIBotEstimatePermission]
     use_read_replica = True
 
     def get_queryset(self):
+        # AI bots are not project members; they only reach this view to set the estimate.
+        visible = (
+            Q()
+            if is_workspace_ai_agent(self.request.user, self.kwargs.get("slug"))
+            else Q(project_projectmember__member=self.request.user, project_projectmember__is_active=True)
+            | Q(network=2)
+        )
         return (
             Project.objects.filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(
-                Q(
-                    project_projectmember__member=self.request.user,
-                    project_projectmember__is_active=True,
-                )
-                | Q(network=2)
-            )
+            .filter(visible)
             .select_related("workspace", "workspace__owner", "default_assignee", "project_lead")
             .annotate(
                 is_member=Exists(
