@@ -91,8 +91,8 @@ class TestProjectAPIPost(TestProjectBase):
 
         # Verify default states were created
         states = State.objects.filter(project=project)
-        assert states.count() == 6
-        expected_states = ["Backlog", "Todo", "In Progress", "Error", "Done", "Cancelled"]
+        assert states.count() == 7
+        expected_states = ["Backlog", "Todo", "In Progress", "Error", "Awaiting Human", "Done", "Cancelled"]
         state_names = list(states.values_list("name", flat=True))
         assert state_names == expected_states  # ordered by sequence
         error_state = states.get(name="Error")

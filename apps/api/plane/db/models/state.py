@@ -21,6 +21,7 @@ class StateGroup(models.TextChoices):
 
 
 ERROR_STATE_NAME = "Error"
+AWAITING_HUMAN_STATE_NAME = "Awaiting Human"
 
 # Default states
 DEFAULT_STATES = [
@@ -48,6 +49,13 @@ DEFAULT_STATES = [
         "name": ERROR_STATE_NAME,
         "color": "#E5484D",
         "sequence": 40000,
+        "group": StateGroup.STARTED.value,
+    },
+    {
+        # A bot waits for a human answer (HumanRequest); still open, so blocked items stay blocked
+        "name": AWAITING_HUMAN_STATE_NAME,
+        "color": "#8E4EC6",
+        "sequence": 42500,
         "group": StateGroup.STARTED.value,
     },
     {

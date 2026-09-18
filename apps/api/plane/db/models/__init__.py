@@ -61,7 +61,7 @@ from .project import (
 )
 from .session import Session
 from .social_connection import SocialLoginConnection
-from .state import State, StateGroup, DEFAULT_STATES, ERROR_STATE_NAME
+from .state import State, StateGroup, DEFAULT_STATES, ERROR_STATE_NAME, AWAITING_HUMAN_STATE_NAME
 from .user import Account, Profile, User, BotTypeEnum
 from .view import IssueView
 from .webhook import Webhook, WebhookLog
@@ -92,3 +92,4 @@ from .sticky import Sticky
 from .description import Description, DescriptionVersion
 
 from .ai_usage import AIUsageRecord, WorkItemAIUsage
+from .human_request import HumanRequest, HumanRequestDecision, HumanRequestKind
