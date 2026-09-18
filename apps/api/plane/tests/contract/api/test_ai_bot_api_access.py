@@ -53,7 +53,11 @@ from plane.db.models import (
     ProjectMember,
     ProjectPage,
     State,
+    User,
+    Workspace,
+    WorkspaceMember,
 )
+from plane.db.models.api import APIToken
 
 
 def _v1(slug, project_id, suffix=""):
@@ -1429,3 +1433,192 @@ class TestAIBotEstimateAccess:
         project.refresh_from_db()
         assert project.estimate_id == bot_estimate.id
         assert project.name == "Renamed by a human"
+
+
+def _planning_requests(client, slug, project_id, cycle, module, estimate, item, skip=()):
+    """(label, response) of every planning read and write the bot rules cover, except the labels in ``skip``."""
+    project_url = f"/api/v1/workspaces/{slug}/projects/{project_id}/"
+    issues = {"issues": [str(item.id)]}
+    requests = [
+        ("list cycles", "get", _v1(slug, project_id, "cycles/"), None),
+        ("list modules", "get", _v1(slug, project_id, "modules/"), None),
+        ("list labels", "get", _v1(slug, project_id, "labels/"), None),
+        ("read estimate", "get", _v1(slug, project_id, "estimates/"), None),
+        (
+            "create cycle",
+            "post",
+            _v1(slug, project_id, "cycles/"),
+            {"name": "C9", "start_date": "2026-10-05", "end_date": "2026-10-11"},
+        ),
+        ("create module", "post", _v1(slug, project_id, "modules/"), {"name": "M9"}),
+        ("create label", "post", _v1(slug, project_id, "labels/"), {"name": "lane:x"}),
+        ("create estimate", "post", _v1(slug, project_id, "estimates/"), {"name": "P", "type": "points"}),
+        ("update cycle", "patch", _v1(slug, project_id, f"cycles/{cycle.id}/"), {"name": "X"}),
+        ("update module", "patch", _v1(slug, project_id, f"modules/{module.id}/"), {"name": "X"}),
+        ("add to cycle", "post", _v1(slug, project_id, f"cycles/{cycle.id}/cycle-issues/"), issues),
+        ("add to module", "post", _v1(slug, project_id, f"modules/{module.id}/module-issues/"), issues),
+        (
+            "add estimate points",
+            "post",
+            _v1(slug, project_id, f"estimates/{estimate.id}/estimate-points/"),
+            {"estimate_points": [{"key": 1, "value": "1"}]},
+        ),
+        ("set project estimate", "patch", project_url, {"estimate": str(estimate.id)}),
+        ("create top-level item", "post", _v1(slug, project_id, "work-items/"), {"name": "Planned"}),
+        ("update own item", "patch", _v1(slug, project_id, f"work-items/{item.id}/"), {"name": "Hijacked"}),
+    ]
+    return [
+        (label, getattr(client, method)(url) if body is None else getattr(client, method)(url, body, format="json"))
+        for label, method, url, body in requests
+        if label not in skip
+    ]
+
+
+def _assert_planning_untouched(project, cycle, module, estimate, item):
+    project.refresh_from_db()
+    cycle.refresh_from_db()
+    module.refresh_from_db()
+    item.refresh_from_db()
+    assert project.estimate_id is None
+    assert cycle.name == "C1"
+    assert module.name == "M1"
+    assert item.name == "Planned item"
+    assert Cycle.objects.filter(project=project).count() == 1
+    assert Module.objects.filter(project=project).count() == 1
+    assert Estimate.objects.filter(project=project).count() == 1
+    assert not Label.objects.filter(project=project).exists()
+    assert not EstimatePoint.objects.filter(estimate=estimate).exists()
+    assert not CycleIssue.objects.filter(cycle=cycle).exists()
+    assert not ModuleIssue.objects.filter(module=module).exists()
+    assert Issue.objects.filter(project=project).count() == 1
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIBotPlanningAccessIsolation:
+    """The planning rights belong to active AI_AGENT members of the workspace, and to nobody else."""
+
+    @pytest.fixture
+    def planning(self, workspace, project, state, create_user):
+        """(cycle, module, estimate, work item) of the project; the estimate and the item get their creator later."""
+        cycle = _create_cycle(project, workspace, create_user, "C1")
+        module = Module.objects.create(name="M1", project=project, workspace=workspace)
+        estimate = Estimate.objects.create(name="Points", type="points", project=project, workspace=workspace)
+        item = _create_issue(project, workspace, state, None, "Planned item")
+        return cycle, module, estimate, item
+
+    def _owned_by(self, user_id, planning):
+        _cycle, _module, estimate, item = planning
+        _set_created_by(estimate, user_id)
+        Issue.objects.filter(pk=item.pk).update(created_by_id=user_id)
+
+    def test_active_bot_of_the_workspace_gets_every_planning_request(
+        self, workspace, project, bot, planning, monkeypatch
+    ):
+        """Control for the refusals below: the same requests pass for the bot the rules are meant for."""
+        _stub_tasks(monkeypatch)
+        Project.objects.filter(pk=project.pk).update(cycle_view=True, module_view=True)
+        bot_id, bot_client = bot
+        self._owned_by(bot_id, planning)
+
+        statuses = {
+            label: response.status_code
+            for label, response in _planning_requests(bot_client, workspace.slug, project.id, *planning)
+        }
+        # The fixture's estimate is the bot's own, so creating another one answers 409 with its id.
+        assert statuses.pop("create estimate") == status.HTTP_409_CONFLICT
+        assert len(statuses) == 15
+        assert set(statuses.values()) <= {status.HTTP_200_OK, status.HTTP_201_CREATED}, statuses
+
+    def test_bot_of_another_workspace_gets_nothing(
+        self, session_client, workspace, project, create_user, planning, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        other_workspace = Workspace.objects.create(name="Other Workspace", owner=create_user, slug="other-workspace")
+        WorkspaceMember.objects.create(workspace=other_workspace, member=create_user, role=20)
+        foreign_id, foreign_client = _create_bot(session_client, other_workspace, "Foreign AI")
+        self._owned_by(foreign_id, planning)
+
+        for label, response in _planning_requests(foreign_client, workspace.slug, project.id, *planning):
+            assert response.status_code == status.HTTP_403_FORBIDDEN, label
+        _assert_planning_untouched(project, *planning)
+
+    @pytest.mark.parametrize("membership", [{"is_active": False}, {"role": 5}])
+    def test_bot_without_an_active_member_role_gets_nothing(
+        self, workspace, project, bot, planning, membership, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        self._owned_by(bot_id, planning)
+        WorkspaceMember.objects.filter(workspace=workspace, member_id=bot_id).update(**membership)
+
+        for label, response in _planning_requests(bot_client, workspace.slug, project.id, *planning):
+            assert response.status_code == status.HTTP_403_FORBIDDEN, label
+        _assert_planning_untouched(project, *planning)
+
+    def test_bot_that_is_not_an_ai_agent_gets_nothing(self, workspace, project, create_bot_user, planning, monkeypatch):
+        _stub_tasks(monkeypatch)
+        WorkspaceMember.objects.create(workspace=workspace, member=create_bot_user, role=15)
+        token = APIToken.objects.create(user=create_bot_user, label="Plain bot", user_type=1)
+        client = APIClient()
+        client.credentials(HTTP_X_API_KEY=token.token)
+        self._owned_by(create_bot_user.id, planning)
+
+        for label, response in _planning_requests(client, workspace.slug, project.id, *planning):
+            assert response.status_code == status.HTTP_403_FORBIDDEN, label
+        _assert_planning_untouched(project, *planning)
+
+    def test_human_outside_the_project_gains_nothing_from_the_bot_rules(
+        self, workspace, project, planning, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        outsider = User.objects.create(email="outsider@plane.so", username="outsider", first_name="Out")
+        WorkspaceMember.objects.create(workspace=workspace, member=outsider, role=15)
+        token = APIToken.objects.create(user=outsider, label="Outsider")
+        client = APIClient()
+        client.credentials(HTTP_X_API_KEY=token.token)
+        self._owned_by(outsider.id, planning)
+
+        # Creating a label is left out: the unchanged ``ProjectMemberPermission`` decides a human's
+        # ``POST`` by the workspace role alone, with or without the bot rules.
+        requests = _planning_requests(client, workspace.slug, project.id, *planning, skip=("create label",))
+        assert len(requests) == 15
+        for label, response in requests:
+            assert response.status_code == status.HTTP_403_FORBIDDEN, label
+        _assert_planning_untouched(project, *planning)
+
+    def test_project_guest_reads_but_does_not_write_planning_entities(self, workspace, project, planning, monkeypatch):
+        _stub_tasks(monkeypatch)
+        Project.objects.filter(pk=project.pk).update(cycle_view=True, module_view=True)
+        guest = User.objects.create(email="guest@plane.so", username="guest", first_name="Guest")
+        WorkspaceMember.objects.create(workspace=workspace, member=guest, role=5)
+        ProjectMember.objects.create(workspace=workspace, project=project, member=guest, role=5, is_active=True)
+        token = APIToken.objects.create(user=guest, label="Guest")
+        client = APIClient()
+        client.credentials(HTTP_X_API_KEY=token.token)
+        cycle, module, _estimate, _item = planning
+
+        assert client.get(_v1(workspace.slug, project.id, "cycles/")).status_code == status.HTTP_200_OK
+        assert client.get(_v1(workspace.slug, project.id, "modules/")).status_code == status.HTTP_200_OK
+        for url, body in (
+            (_v1(workspace.slug, project.id, "cycles/"), {"name": "C9"}),
+            (_v1(workspace.slug, project.id, "modules/"), {"name": "M9"}),
+        ):
+            assert client.post(url, body, format="json").status_code == status.HTTP_403_FORBIDDEN, url
+        for url in (
+            _v1(workspace.slug, project.id, f"cycles/{cycle.id}/"),
+            _v1(workspace.slug, project.id, f"modules/{module.id}/"),
+        ):
+            assert client.patch(url, {"name": "X"}, format="json").status_code == status.HTTP_403_FORBIDDEN, url
+
+    def test_bot_sets_the_ai_model_of_its_own_work_item(self, workspace, project, state, bot, monkeypatch):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+
+        response = bot_client.patch(
+            _v1(workspace.slug, project.id, f"work-items/{item.id}/"), {"ai_model": "opus-high"}, format="json"
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+        item.refresh_from_db()
+        assert item.ai_model == "opus-high"
