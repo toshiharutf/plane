@@ -4,6 +4,11 @@
 
 from django.urls import path
 
+from plane.api.views.human_request import (
+    WorkItemHumanRequestAnswerAPIEndpoint,
+    WorkItemHumanRequestDetailAPIEndpoint,
+    WorkItemHumanRequestListCreateAPIEndpoint,
+)
 from plane.api.views import (
     IssueListCreateAPIEndpoint,
     IssueDetailAPIEndpoint,
@@ -156,6 +161,21 @@ new_url_patterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/work-items/<uuid:issue_id>/ai-usage/",
         WorkItemAIUsageListCreateAPIEndpoint.as_view(http_method_names=["get", "post"]),
         name="work-item-ai-usage-list",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/work-items/<uuid:issue_id>/human-requests/",
+        WorkItemHumanRequestListCreateAPIEndpoint.as_view(http_method_names=["get", "post"]),
+        name="work-item-human-request-list",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/work-items/<uuid:issue_id>/human-requests/<uuid:pk>/",
+        WorkItemHumanRequestDetailAPIEndpoint.as_view(http_method_names=["get"]),
+        name="work-item-human-request-detail",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/work-items/<uuid:issue_id>/human-requests/<uuid:pk>/answer/",
+        WorkItemHumanRequestAnswerAPIEndpoint.as_view(http_method_names=["post"]),
+        name="work-item-human-request-answer",
     ),
 ]
 

@@ -37,6 +37,8 @@ narrower set of rights (public ``/api/v1`` views only):
   update or delete only links it created.
 - Relations: read and create between any work items.
 - AI usage: read everything, report usage only on work items it is assigned to.
+- Human requests: read everything, ask a question or an approval only on work
+  items it is assigned to; never answer one (only human members answer).
 - Pages: read public pages, create pages, update only pages it owns.
 """
 
@@ -333,10 +335,10 @@ class ProjectEntityOrAIBotLinkPermission(ProjectEntityPermission):
         return False
 
 
-class ProjectEntityOrAIBotAIUsagePermission(ProjectEntityPermission):
+class _ProjectEntityOrAIBotAssignedItemPermission(ProjectEntityPermission):
     """Project members keep full access.
 
-    AI bots may read every usage record and ``POST`` usage only on work items
+    AI bots may read every record and ``POST`` only on work items (``issue_id``)
     they are assigned to.
     """
 
@@ -356,6 +358,17 @@ class ProjectEntityOrAIBotAIUsagePermission(ProjectEntityPermission):
             return is_issue_assigned_to_user(issue_id, project_id, view.workspace_slug, request.user.id)
 
         return False
+
+
+class ProjectEntityOrAIBotAIUsagePermission(_ProjectEntityOrAIBotAssignedItemPermission):
+    """AI bots may read every usage record and ``POST`` usage only on work items they are assigned to."""
+
+
+class ProjectEntityOrAIBotHumanRequestPermission(_ProjectEntityOrAIBotAssignedItemPermission):
+    """AI bots may read every human request and open one only on work items they are assigned to.
+
+    Answering is a separate view that bots are refused (``ProjectEntityPermission``).
+    """
 
 
 class ProjectEntityOrAIBotRelationPermission(ProjectEntityPermission):

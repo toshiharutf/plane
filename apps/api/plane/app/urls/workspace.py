@@ -5,6 +5,10 @@
 from django.urls import path
 
 
+from plane.app.views.workspace.human_request import (
+    WorkspaceHumanRequestAnswerEndpoint,
+    WorkspaceHumanRequestEndpoint,
+)
 from plane.app.views import (
     UserWorkspaceInvitationsViewSet,
     WorkSpaceViewSet,
@@ -100,6 +104,16 @@ urlpatterns = [
         "workspaces/<str:slug>/ai-status/",
         WorkspaceAIStatusEndpoint.as_view(),
         name="workspace-ai-status",
+    ),
+    path(
+        "workspaces/<str:slug>/human-requests/",
+        WorkspaceHumanRequestEndpoint.as_view(),
+        name="workspace-human-requests",
+    ),
+    path(
+        "workspaces/<str:slug>/human-requests/<uuid:pk>/answer/",
+        WorkspaceHumanRequestAnswerEndpoint.as_view(),
+        name="workspace-human-request-answer",
     ),
     path(
         "workspaces/<str:slug>/project-members/",
