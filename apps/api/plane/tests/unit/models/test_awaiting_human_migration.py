@@ -23,6 +23,7 @@ from plane.db.models import (
 
 migration = import_module("plane.db.migrations.0127_awaiting_human")
 
+
 @pytest.fixture
 def workspace(create_user):
     return Workspace.objects.create(name="Human Workspace", slug="human-workspace", owner=create_user)

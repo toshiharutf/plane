@@ -27,6 +27,7 @@ from plane.db.models import (
     ProjectMember,
     State,
     User,
+    WorkspaceMember,
 )
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils import human_request as human_request_module
@@ -421,3 +422,122 @@ class TestListHumanRequests:
         one_item = human_web.get(_web_url(workspace.slug), {"issue_id": str(first.id)})
         assert [row["id"] for row in one_item.data] == [older.id]
         assert human_web.get(_web_url(workspace.slug), {"issue_id": "nope"}).status_code == 400
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestHumanRequestEdgeCases:
+    """Release checks for the paths around the examples: where the item goes back to, and who may answer."""
+
+    def _web_user(self, workspace, email, workspace_role=15):
+        user = User.objects.create(email=email, username=email.split("@")[0], first_name="Web", last_name="User")
+        WorkspaceMember.objects.create(workspace=workspace, member=user, role=workspace_role)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return user, client
+
+    def test_answer_leaves_an_item_that_was_moved_elsewhere_in_place(
+        self, workspace, project, states, bot, bot_item, human_api
+    ):
+        done = State.objects.create(
+            name="Done", group="completed", sequence=60000, project=project, workspace=workspace
+        )
+        request_id = _open_request(bot, workspace, project, bot_item)
+        Issue.objects.filter(pk=bot_item.pk).update(state=done)
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, bot_item.id, request_id), {"answer": "yes"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        assert response.data["decision"] == "accept"
+        bot_item.refresh_from_db()
+        assert bot_item.state_id == done.id
+        assert IssueComment.objects.get(issue=bot_item).comment_stripped == "Answer: yes"
+
+    def test_answer_resumes_the_first_started_state_when_the_remembered_one_was_deleted(
+        self, workspace, project, states, create_user, bot, human_api
+    ):
+        review = State.objects.create(
+            name="Review", group="started", sequence=38000, project=project, workspace=workspace
+        )
+        issue = _create_issue(project, workspace, review, create_user, "In review", [bot.id])
+        request_id = _open_request(bot, workspace, project, issue, "question", "Which DB for tests?")
+        assert HumanRequest.objects.get(pk=request_id).state_before_id == review.id
+        State.objects.filter(pk=review.pk).update(deleted_at=timezone.now())
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, issue.id, request_id), {"answer": "use sqlite"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        issue.refresh_from_db()
+        assert issue.state_id == states.in_progress.id
+
+    def test_asking_on_an_item_already_awaiting_human_resumes_the_first_started_state(
+        self, workspace, project, states, create_user, bot, human_api
+    ):
+        issue = _create_issue(project, workspace, states.awaiting, create_user, "Waiting", [bot.id])
+
+        response = _ask(bot, workspace, project, issue, "question", "Which DB for tests?")
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert response.data["state_before"] is None
+        answer = human_api.post(
+            _answer_url(workspace.slug, project.id, issue.id, response.data["id"]),
+            {"answer": "use sqlite"},
+            format="json",
+        )
+        assert answer.status_code == status.HTTP_200_OK, answer.data
+        issue.refresh_from_db()
+        assert issue.state_id == states.in_progress.id
+
+    def test_asking_in_a_project_without_awaiting_human_state_is_400(self, workspace, project, states, bot, bot_item):
+        State.objects.filter(pk=states.awaiting.pk).update(name="Blocked")
+
+        response = _ask(bot, workspace, project, bot_item, "approval", "Push abc123 and deploy?")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert AWAITING_HUMAN_STATE_NAME in response.data["error"]
+        assert not HumanRequest.objects.filter(issue=bot_item).exists()
+        bot_item.refresh_from_db()
+        assert bot_item.state_id == states.in_progress.id
+
+    def test_awaiting_human_state_name_matches_case_insensitively(self, workspace, project, states, bot, bot_item):
+        State.objects.filter(pk=states.awaiting.pk).update(name="awaiting human")
+
+        response = _ask(bot, workspace, project, bot_item, "question", "Which DB for tests?")
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        bot_item.refresh_from_db()
+        assert bot_item.state_id == states.awaiting.id
+
+    def test_web_answer_needs_an_admin_or_member_role_in_the_project(self, workspace, project, states, bot, bot_item):
+        request_id = _open_request(bot, workspace, project, bot_item)
+        url = _web_url(workspace.slug, f"{request_id}/answer/")
+        guest, guest_client = self._web_user(workspace, "guest@plane.so")
+        ProjectMember.objects.create(workspace=workspace, project=project, member=guest, role=5, is_active=True)
+        _outsider, outsider_client = self._web_user(workspace, "outsider@plane.so")
+
+        # A project guest sees the request but cannot answer it; a workspace member outside the project sees nothing.
+        assert [row["id"] for row in guest_client.get(_web_url(workspace.slug)).data] == [HumanRequest.objects.get().id]
+        assert guest_client.post(url, {"answer": "yes"}, format="json").status_code == status.HTTP_403_FORBIDDEN
+        assert outsider_client.get(_web_url(workspace.slug)).data == []
+        assert outsider_client.post(url, {"answer": "yes"}, format="json").status_code == status.HTTP_404_NOT_FOUND
+        assert HumanRequest.objects.get(pk=request_id).is_open
+
+    def test_web_list_hides_requests_of_archived_or_deleted_items(
+        self, workspace, project, states, create_user, bot, human_web
+    ):
+        archived = _create_issue(project, workspace, states.in_progress, create_user, "Archived", [bot.id])
+        deleted = _create_issue(project, workspace, states.in_progress, create_user, "Deleted", [bot.id])
+        live = _create_issue(project, workspace, states.in_progress, create_user, "Live", [bot.id])
+        for issue in (archived, deleted, live):
+            _open_request(bot, workspace, project, issue, "question", f"{issue.name}?")
+        Issue.objects.filter(pk=archived.pk).update(archived_at=timezone.now().date())
+        Issue.all_objects.filter(pk=deleted.pk).update(deleted_at=timezone.now())
+
+        response = human_web.get(_web_url(workspace.slug))
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        assert [row["issue_name"] for row in response.data] == ["Live"]
