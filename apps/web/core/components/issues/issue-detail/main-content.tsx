@@ -24,6 +24,7 @@ import useSize from "@/hooks/use-window-size";
 // services
 import { WorkItemVersionService } from "@/services/issue";
 // local imports
+import { HumanRequestBanner } from "../human-request-banner";
 import { IssueDetailWidgets } from "../issue-detail-widgets";
 import { NameDescriptionUpdateStatus } from "../issue-update-status";
 import { PeekOverviewProperties } from "../peek-overview/properties";
@@ -78,6 +79,8 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
   return (
     <>
       <div className="space-y-4 rounded-lg">
+        {!isArchived && <HumanRequestBanner workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />}
+
         {issue.parent_id && (
           <IssueParentDetail
             workspaceSlug={workspaceSlug}

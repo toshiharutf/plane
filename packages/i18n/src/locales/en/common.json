@@ -162,6 +162,17 @@
       "work_items": "Work items"
     }
   },
+  "human_request": {
+    "approval": "Approval requested",
+    "question": "Question",
+    "asked_by": "asked by {name}",
+    "answer": "Answer",
+    "placeholder": "Type your answer",
+    "approval_placeholder": "Start with yes or no, then add a note if you like",
+    "approval_hint": "Start with yes or no",
+    "send": "Send",
+    "send_failed": "The answer was not sent"
+  },
   "workspace_invites": "Workspace invites",
   "enter_god_mode": "Enter god mode",
   "workspace_logo": "Workspace logo",
