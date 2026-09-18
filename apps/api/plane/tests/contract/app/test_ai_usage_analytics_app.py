@@ -11,12 +11,12 @@ from django.utils import timezone
 from rest_framework import status
 
 from plane.db.models import (
+    AIUsageRecord,
     Issue,
     Project,
     ProjectMember,
     State,
     User,
-    WorkItemAIUsage,
     Workspace,
     WorkspaceMember,
 )
@@ -43,8 +43,12 @@ def _issue(project, state, user, name, completed_at=None):
     return issue
 
 
+LEGACY_FIELDS = {"cache_creation_input_tokens": "cache_write_1h_tokens", "cache_read_input_tokens": "cache_read_tokens"}
+
+
 def _usage(issue, model, session_id="", **tokens):
-    return WorkItemAIUsage.objects.create(
+    tokens = {LEGACY_FIELDS.get(field, field): value for field, value in tokens.items()}
+    return AIUsageRecord.objects.create(
         issue=issue, project=issue.project, workspace=issue.workspace, model=model, session_id=session_id, **tokens
     )
 
@@ -106,6 +110,18 @@ class TestAIUsageAnalytics:
         assert sonnet_item["id"] == issue.id
         assert (sonnet_item["input_tokens"], sonnet_item["output_tokens"]) == (5, 6)
 
+    def test_ac3_reads_ai_usage_records_with_cache_splits_and_cost(
+        self, session_client, workspace, project, done, create_user
+    ):
+        issue = _issue(project, done, create_user, "Priced task")
+        _usage(issue, "claude-opus-5", "s1", input_tokens=1_000_000, cache_write_5m_tokens=10, cache_write_1h_tokens=5)
+        _usage(issue, "claude-opus-5", "s2", output_tokens=100_000, cache_read_tokens=7)
+
+        item = _by_model(session_client.get(URL.format(slug=workspace.slug)))["claude-opus-5"]["work_items"][0]
+
+        assert (item["cache_creation_input_tokens"], item["cache_read_input_tokens"]) == (15, 7)
+        assert item["api_cost_usd"] == sum(record.api_cost_usd for record in AIUsageRecord.objects.filter(issue=issue))
+
     def test_excludes_open_archived_and_items_without_usage(
         self, session_client, workspace, project, done, todo, create_user
     ):
@@ -116,7 +132,7 @@ class TestAIUsageAnalytics:
         _usage(archived, "claude-opus-5", input_tokens=100)
         Issue.objects.filter(id=archived.id).update(archived_at=timezone.now().date())
         deleted_usage = _usage(_issue(project, done, create_user, "Deleted usage"), "claude-opus-5", input_tokens=7)
-        WorkItemAIUsage.objects.filter(id=deleted_usage.id).update(deleted_at=timezone.now())
+        AIUsageRecord.objects.filter(id=deleted_usage.id).update(deleted_at=timezone.now())
         kept = _issue(project, done, create_user, "Kept")
         _usage(kept, "claude-opus-5", input_tokens=3)
 

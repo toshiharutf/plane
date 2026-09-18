@@ -7,13 +7,34 @@ from decimal import Decimal
 from importlib import import_module
 
 import pytest
-from django.apps import apps
+from django.db import connection
+from django.db.migrations.loader import MigrationLoader
+from django.test import override_settings
 from django.utils import timezone
 
-from plane.db.models import AIUsageRecord, Issue, Project, WorkItemAIUsage, Workspace
+from plane.db.models import AIUsageRecord, Issue, Project, Workspace
 from plane.utils.ai_pricing import PRICE_VERSION
 
 migration = import_module("plane.db.migrations.0128_aiusagerecord")
+drop_migration = import_module("plane.db.migrations.0129_drop_workitemaiusage")
+
+
+@pytest.fixture
+def legacy_apps(db):
+    """Models as of 0128, with the dropped ``work_item_ai_usages`` table recreated for the test."""
+    # pytest runs with --nomigrations, which hides the migration modules from the loader.
+    with override_settings(MIGRATION_MODULES={}):
+        old_apps = MigrationLoader(None).project_state(("db", "0128_aiusagerecord")).apps
+    with connection.schema_editor() as editor:
+        editor.create_model(old_apps.get_model("db", "WorkItemAIUsage"))
+    return old_apps
+
+
+def _legacy_usage(legacy_apps, issue, **fields):
+    WorkItemAIUsage = legacy_apps.get_model("db", "WorkItemAIUsage")
+    return WorkItemAIUsage.objects.create(
+        issue_id=issue.id, project_id=issue.project_id, workspace_id=issue.workspace_id, **fields
+    )
 
 
 @pytest.fixture
@@ -90,10 +111,10 @@ class TestAIUsageRecordModel:
 @pytest.mark.unit
 @pytest.mark.django_db
 class TestCopyWorkItemAIUsageMigration:
-    def test_ac3_copies_rows_with_cache_writes_as_1h(self, issue, project):
-        old = WorkItemAIUsage.objects.create(
-            issue=issue,
-            project=project,
+    def test_ac3_copies_rows_with_cache_writes_as_1h(self, legacy_apps, issue, project):
+        old = _legacy_usage(
+            legacy_apps,
+            issue,
             model="claude-opus-5",
             session_id="old-session",
             input_tokens=1_000_000,
@@ -104,9 +125,9 @@ class TestCopyWorkItemAIUsageMigration:
             external_id="ext-1",
         )
         created_at = timezone.now() - timedelta(days=30)
-        WorkItemAIUsage.objects.filter(id=old.id).update(created_at=created_at)
+        type(old).objects.filter(id=old.id).update(created_at=created_at)
 
-        migration.copy_work_item_ai_usage(apps, None)
+        migration.copy_work_item_ai_usage(legacy_apps, None)
 
         record = AIUsageRecord.objects.get(id=old.id)
         assert record.cache_write_1h_tokens == 10_000
@@ -126,13 +147,21 @@ class TestCopyWorkItemAIUsageMigration:
         assert record.api_cost_usd == Decimal("7.61")
         assert record.price_version == PRICE_VERSION
 
-    def test_copies_every_row_once(self, issue, project):
-        WorkItemAIUsage.objects.create(issue=issue, project=project, model="claude-opus-5", session_id="a")
-        deleted = WorkItemAIUsage.objects.create(issue=issue, project=project, model="claude-sonnet-5", session_id="b")
-        WorkItemAIUsage.objects.filter(id=deleted.id).update(deleted_at=timezone.now())
+    def test_copies_every_row_once(self, legacy_apps, issue, project):
+        _legacy_usage(legacy_apps, issue, model="claude-opus-5", session_id="a")
+        deleted = _legacy_usage(legacy_apps, issue, model="claude-sonnet-5", session_id="b")
+        type(deleted).objects.filter(id=deleted.id).update(deleted_at=timezone.now())
 
-        migration.copy_work_item_ai_usage(apps, None)
-        migration.copy_work_item_ai_usage(apps, None)
+        migration.copy_work_item_ai_usage(legacy_apps, None)
+        drop_migration.copy_remaining_work_item_ai_usage(legacy_apps, None)
 
         assert AIUsageRecord.all_objects.count() == 2
         assert AIUsageRecord.all_objects.get(id=deleted.id).deleted_at is not None
+
+
+@pytest.mark.unit
+def test_ac5_drop_runs_after_the_copy_migration():
+    operations = drop_migration.Migration.operations
+    assert ("db", "0128_aiusagerecord") in drop_migration.Migration.dependencies
+    assert operations[-1].name == "WorkItemAIUsage"
+    assert operations[0].code is drop_migration.copy_remaining_work_item_ai_usage

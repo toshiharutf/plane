@@ -39,7 +39,6 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
 import { SidebarPropertyListItem } from "@/components/common/layout/sidebar/property-list-item";
 import { IssueAIModelProperty } from "./ai-model-select";
-import { IssueAIUsageProperties } from "./ai-usage-properties";
 import { IssueCycleSelect } from "./cycle-select";
 import { IssueDatetimeTimeInput } from "./datetime-time-input";
 import { IssueLabel } from "./label";
@@ -275,8 +274,6 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 disabled={!isEditable}
               />
             </SidebarPropertyListItem>
-
-            <IssueAIUsageProperties workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
           </div>
         </div>
       </div>
