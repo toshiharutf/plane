@@ -238,12 +238,15 @@ const getModuleColumns = (): IGroupByColumn[] | undefined => {
   return modules;
 };
 
+// Name of the state that should always be shown first when grouping work items by state.
+const AWAITING_HUMAN_STATE_NAME = "awaiting human";
+
 const getStateColumns = ({ projectId }: TGetColumns): IGroupByColumn[] | undefined => {
   const { getProjectStates, projectStates } = store.state;
   const _states = projectId ? getProjectStates(projectId) : projectStates;
   if (!_states) return;
   // map project states to group by columns
-  return _states.map((state) => ({
+  const columns = _states.map((state) => ({
     id: state.id,
     name: state.name,
     icon: (
@@ -253,6 +256,13 @@ const getStateColumns = ({ projectId }: TGetColumns): IGroupByColumn[] | undefin
     ),
     payload: { state_id: state.id },
   }));
+  // Move the Awaiting Human column to the front, above Backlog, keeping every other column's relative order.
+  const awaitingHumanIndex = columns.findIndex((column) => column.name.toLowerCase() === AWAITING_HUMAN_STATE_NAME);
+  if (awaitingHumanIndex > 0) {
+    const [awaitingHumanColumn] = columns.splice(awaitingHumanIndex, 1);
+    columns.unshift(awaitingHumanColumn);
+  }
+  return columns;
 };
 
 const getStateGroupColumns = (): IGroupByColumn[] => {
