@@ -8,6 +8,7 @@ A bot authenticated with its API key can:
 
 - read every work item, comment, relation and activity in the workspace,
 - update only work items it is assigned to,
+- move unassigned work items it created back to a Todo state (nothing else on them),
 - create sub work items under work items it is assigned to,
 - create unassigned top-level work items that ask a human for an action,
 - create top-level ``[Release] - <branch>`` work items assigned only to itself,
@@ -21,7 +22,10 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from uuid import uuid4
+
 from plane.db.models import (
+    ERROR_STATE_NAME,
     Issue,
     IssueAssignee,
     IssueComment,
@@ -242,6 +246,61 @@ class TestAIBotWorkItemAccess:
         for issue in (human_created, assigned):
             response = bot_client.patch(url(issue), {"state": str(state.id)}, format="json")
             assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_bot_reopen_refuses_states_of_other_projects_and_malformed_state_ids(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        other_project = Project.objects.create(
+            name="Other Project", identifier="OTH", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        other_todo = State.objects.create(name="Todo", group="unstarted", project=other_project, workspace=workspace)
+        ticket = _create_issue_by(bot_id, project, workspace, done, "[Human] approve")
+        url = _v1(workspace.slug, project.id, f"work-items/{ticket.id}/")
+
+        for state_id in (str(other_todo.id), str(uuid4()), "not-a-uuid", "", None):
+            response = bot_client.patch(url, {"state": state_id}, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, state_id
+        ticket.refresh_from_db()
+        assert ticket.state_id == done.id
+
+    def test_bot_reopens_its_ticket_once_the_human_assignee_was_removed(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        ticket = _create_issue_by(bot_id, project, workspace, done, "[Human] approve", [str(create_user.id)])
+        url = _v1(workspace.slug, project.id, f"work-items/{ticket.id}/")
+
+        response = bot_client.patch(url, {"state": str(state.id)}, format="json")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        # Unassigning soft deletes the assignee row; the ticket counts as unassigned again.
+        IssueAssignee.objects.filter(issue=ticket).delete()
+        assert IssueAssignee.all_objects.filter(issue=ticket, deleted_at__isnull=False).exists()
+        response = bot_client.patch(url, {"state": str(state.id)}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+        ticket.refresh_from_db()
+        assert ticket.state_id == state.id
+
+    def test_bot_moves_its_assigned_work_item_to_the_error_state(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        error = State.objects.create(name=ERROR_STATE_NAME, group="started", project=project, workspace=workspace)
+        task = _create_issue(project, workspace, state, create_user, "Bot task", [bot_id])
+        url = _v1(workspace.slug, project.id, f"work-items/{task.id}/")
+
+        response = bot_client.patch(url, {"state": str(error.id)}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+        task.refresh_from_db()
+        assert task.state_id == error.id
+        assert task.state.group == "started"  # still open: items blocked by it stay blocked
+        assert task.completed_at is None
 
     def test_bot_cannot_upsert_or_delete_work_items(self, workspace, project, state, create_user, bot, monkeypatch):
         _stub_tasks(monkeypatch)
