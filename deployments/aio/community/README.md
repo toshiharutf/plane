@@ -101,7 +101,7 @@ docker run --name myaio --rm -it \
 
 #### API Configuration
 
-- `API_KEY_RATE_LIMIT`: API key rate limit (default: `60/minute`)
+- `API_KEY_RATE_LIMIT`: API key rate limit (default: `300/minute`, raised for AI agents that share one bot key)
 
 ## Port Mapping
 
