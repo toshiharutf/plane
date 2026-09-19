@@ -251,7 +251,7 @@ class TestAIBotMembers:
         bot_id = str(create_response.data["workspace_member"]["member"]["id"])
         bot_token = create_response.data["api_token"]["token"]
         todo_state = State.objects.get(project=project)
-        started_state = State.objects.create(name="Started", group="started", project=project, workspace=workspace)
+        started_state = State.objects.create(name="In Progress", group="started", project=project, workspace=workspace)
         issue_response = session_client.post(
             _issues_url(workspace.slug, project.id),
             {

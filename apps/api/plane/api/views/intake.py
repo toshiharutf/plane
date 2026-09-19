@@ -31,6 +31,7 @@ from plane.db.models import Intake, IntakeIssue, Issue, Project, ProjectMember, 
 from plane.utils.host import base_host
 from plane.utils.content_validator import validate_html_content
 from plane.utils.members import active_assignee_q
+from plane.utils.work_item_state_rules import check_initial_state
 from .base import BaseAPIView
 from plane.db.models.intake import SourceType
 from plane.utils.openapi import (
@@ -173,6 +174,8 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
 
         # get the triage state
         triage_state = State.triage_objects.filter(project_id=project_id, workspace__slug=slug).first()
+        # A bot creates work items only in Backlog, Todo or Awaiting Human, never in Triage
+        check_initial_state(request.user, triage_state or State(name="Triage", group=StateGroup.TRIAGE.value))
 
         if not triage_state:
             triage_state = State.objects.create(

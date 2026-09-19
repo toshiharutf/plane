@@ -56,7 +56,7 @@ export const HumanRequestBanner = observer(function HumanRequestBanner(props: Pr
       await humanRequestService.answer(workspaceSlug, humanRequest.id, answer);
       setAnswer("");
       await mutate((requests) => requests?.filter((request) => request.id !== humanRequest.id), { revalidate: false });
-      // The answer moves the item back to its state before the request.
+      // The answer moves the item from Awaiting Human to Todo.
       await fetchIssue(workspaceSlug, projectId, issueId).catch(() => undefined);
     } catch (error) {
       const message = (error as { error?: string } | undefined)?.error;

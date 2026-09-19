@@ -137,7 +137,8 @@ class TestAwaitingHumanDefaults:
     def test_ac1_default_states_order(self):
         names = [state["name"] for state in sorted(DEFAULT_STATES, key=lambda state: state["sequence"])]
 
-        assert names == ORDER + ["Triage"]
+        # 0131_remove_error_state dropped Error from the defaults.
+        assert names == [name for name in ORDER if name != "Error"] + ["Triage"]
 
 
 @pytest.mark.unit

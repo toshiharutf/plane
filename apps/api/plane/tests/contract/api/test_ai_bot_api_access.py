@@ -8,7 +8,8 @@ A bot authenticated with its API key can:
 
 - read every work item, comment, relation and activity in the workspace,
 - update only work items it is assigned to,
-- move unassigned work items it created back to a Todo state (nothing else on them),
+- move unassigned work items it created back to a Todo state (nothing else on them;
+  the state machine only allows it from Awaiting Human),
 - create sub work items under work items it is assigned to,
 - create unassigned top-level work items that ask a human for an action,
 - comment on any work item and edit only its own comments,
@@ -24,6 +25,9 @@ A bot authenticated with its API key can:
 - read and create labels, but never update or delete them,
 - create the project's estimate and its points when none exists, and make an
   estimate it created the project's estimate.
+
+Every state a bot sets also follows the work item state machine
+(``plane.utils.work_item_state_rules``, see ``test_work_item_state_rules.py``).
 """
 
 from datetime import timedelta
@@ -35,7 +39,6 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from plane.db.models import (
-    ERROR_STATE_NAME,
     Cycle,
     CycleIssue,
     Estimate,
@@ -234,12 +237,21 @@ class TestAIBotWorkItemAccess:
         cancelled = State.objects.create(name="Cancelled", group="cancelled", project=project, workspace=workspace)
         url = lambda issue: _v1(workspace.slug, project.id, f"work-items/{issue.id}/")  # noqa: E731
 
+        awaiting = State.objects.create(name="Awaiting Human", group="started", project=project, workspace=workspace)
+
+        ticket = _create_issue_by(bot_id, project, workspace, awaiting, "[Human] approve (Awaiting Human)")
+        response = bot_client.patch(url(ticket), {"state": str(state.id)}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+        ticket.refresh_from_db()
+        assert ticket.state_id == state.id
+
+        # The state machine only lets a bot move Awaiting Human back to Todo.
         for current in (done, cancelled, started_state):
             ticket = _create_issue_by(bot_id, project, workspace, current, f"[Human] approve ({current.name})")
             response = bot_client.patch(url(ticket), {"state": str(state.id)}, format="json")
-            assert response.status_code == status.HTTP_200_OK, response.data
+            assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
             ticket.refresh_from_db()
-            assert ticket.state_id == state.id
+            assert ticket.state_id == current.id
 
     def test_bot_reopen_right_is_limited_to_todo_on_its_own_unassigned_work_items(
         self, workspace, project, state, started_state, create_user, bot, monkeypatch
@@ -294,8 +306,8 @@ class TestAIBotWorkItemAccess:
     ):
         _stub_tasks(monkeypatch)
         bot_id, bot_client = bot
-        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
-        ticket = _create_issue_by(bot_id, project, workspace, done, "[Human] approve", [str(create_user.id)])
+        awaiting = State.objects.create(name="Awaiting Human", group="started", project=project, workspace=workspace)
+        ticket = _create_issue_by(bot_id, project, workspace, awaiting, "[Human] approve", [str(create_user.id)])
         url = _v1(workspace.slug, project.id, f"work-items/{ticket.id}/")
 
         response = bot_client.patch(url, {"state": str(state.id)}, format="json")
@@ -309,21 +321,21 @@ class TestAIBotWorkItemAccess:
         ticket.refresh_from_db()
         assert ticket.state_id == state.id
 
-    def test_bot_moves_its_assigned_work_item_to_the_error_state(
+    def test_bot_cannot_move_its_assigned_work_item_to_a_custom_state(
         self, workspace, project, state, create_user, bot, monkeypatch
     ):
+        # The Error state is gone; a leftover custom state is outside the state machine for bots.
         _stub_tasks(monkeypatch)
         bot_id, bot_client = bot
-        error = State.objects.create(name=ERROR_STATE_NAME, group="started", project=project, workspace=workspace)
+        error = State.objects.create(name="Error", group="started", project=project, workspace=workspace)
         task = _create_issue(project, workspace, state, create_user, "Bot task", [bot_id])
         url = _v1(workspace.slug, project.id, f"work-items/{task.id}/")
 
         response = bot_client.patch(url, {"state": str(error.id)}, format="json")
-        assert response.status_code == status.HTTP_200_OK, response.data
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
+        assert response.data["allowed_states"] == ["In Progress"]
         task.refresh_from_db()
-        assert task.state_id == error.id
-        assert task.state.group == "started"  # still open: items blocked by it stay blocked
-        assert task.completed_at is None
+        assert task.state_id == state.id
 
     def test_bot_cannot_upsert_or_delete_work_items(self, workspace, project, state, create_user, bot, monkeypatch):
         _stub_tasks(monkeypatch)
@@ -974,13 +986,19 @@ class TestAIBotPlannedWorkItemAccess:
         assert item.estimate_point_id == point.id
         assert list(item.labels.values_list("id", flat=True)) == [label.id]
 
-        # Assign it to itself, give it back, and cancel it.
-        for body in ({"assignees": [bot_id]}, {"assignees": []}, {"state": str(cancelled.id)}):
+        # Assign it to itself and give it back.
+        for body in ({"assignees": [bot_id]}, {"assignees": []}):
             response = bot_client.patch(url, body, format="json")
             assert response.status_code == status.HTTP_200_OK, (body, response.data)
         item.refresh_from_db()
-        assert item.state_id == cancelled.id
+        assert item.state_id == started_state.id
         assert not IssueAssignee.objects.filter(issue=item).exists()
+
+        # Cancelling is outside the state machine: only a person may cancel a work item.
+        response = bot_client.patch(url, {"state": str(cancelled.id)}, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
+        item.refresh_from_db()
+        assert item.state_id == started_state.id
 
     def test_bot_cannot_set_a_completed_state_or_assign_others_on_its_own_work_item(
         self, session_client, workspace, project, state, create_user, bot, monkeypatch

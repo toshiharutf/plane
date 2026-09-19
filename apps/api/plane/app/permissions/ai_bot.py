@@ -21,7 +21,13 @@ narrower set of rights (public ``/api/v1`` views only):
   labels, dates, AI model, parent, state and assignees): assignees only to
   nobody or to itself alone, the parent only to nothing or to a work item it
   created or is assigned to, and the state never to a ``completed`` group state
-  (the bot never closes planned items as Done; ``cancelled`` is allowed).
+  (the bot never closes planned items as Done).
+  On top of these permissions, every state a bot sets follows the work item
+  state machine (``plane.utils.work_item_state_rules``, enforced by the issue
+  serializers with a 400): Backlog -> Todo or Awaiting Human, Todo -> In
+  Progress, In Progress -> Awaiting Human or Done, Awaiting Human -> Todo, Done
+  is final; a bot creates work items only in Backlog, Todo or Awaiting Human,
+  and never moves one to Cancelled or to a custom state.
 - Cycles: read, create, update the name, description and dates, add work
   items and transfer the open ones to another cycle; never delete or archive.
 - Modules: read, create, update the name, description, status and dates, and
@@ -38,7 +44,8 @@ narrower set of rights (public ``/api/v1`` views only):
 - Relations: read and create between any work items.
 - AI usage: read everything, report usage only on work items it is assigned to.
 - Human requests: read everything, ask a question or an approval only on work
-  items it is assigned to; never answer one (only human members answer).
+  items it is assigned to that are in Backlog or In Progress; never answer one
+  (only human members answer; the answer moves the item to Todo).
 - Pages: read public pages, create pages, update only pages it owns.
 """
 

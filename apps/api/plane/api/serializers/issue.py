@@ -32,6 +32,7 @@ from plane.utils.content_validator import (
     validate_binary_data,
 )
 from plane.utils.members import get_assignable_issue_assignee_ids
+from plane.utils.work_item_state_rules import check_initial_state, check_state_change, current_actor
 
 from .base import BaseSerializer
 from .cycle import CycleLiteSerializer, CycleSerializer
@@ -152,6 +153,13 @@ class IssueSerializer(BaseSerializer):
             ).exists()
         ):
             raise serializers.ValidationError("Estimate point is not valid please pass a valid estimate_point_id")
+
+        # The work item state machine (plane.utils.work_item_state_rules): 400 on a refused state
+        actor = current_actor()
+        if self.instance is None:
+            check_initial_state(actor, data.get("state"), self.context.get("project_id"))
+        elif data.get("state") is not None:
+            check_state_change(actor, self.instance, data["state"], data.get("assignees") or ())
 
         return data
 

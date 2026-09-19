@@ -181,7 +181,7 @@ class TestAskHuman:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestAnswerHumanRequest:
-    def test_ac2_question_answer_restores_state_and_comments(
+    def test_ac2_question_answer_moves_item_to_todo_and_comments(
         self, workspace, project, states, create_user, bot, bot_item, human_api
     ):
         request_id = _open_request(bot, workspace, project, bot_item, "question", "Which DB for tests?")
@@ -196,8 +196,10 @@ class TestAnswerHumanRequest:
         assert response.data["is_open"] is False
         assert str(response.data["resolved_by"]) == str(create_user.id)
         assert response.data["resolved_at"] is not None
+        # Awaiting Human -> Todo (not back to In Progress): the orchestrator picks it up again.
+        assert str(response.data["state_before"]) == str(states.in_progress.id)
         bot_item.refresh_from_db()
-        assert bot_item.state_id == states.in_progress.id
+        assert bot_item.state_id == states.todo.id
         comments = IssueComment.objects.filter(issue=bot_item)
         assert [comment.comment_stripped for comment in comments] == ["Answer: use sqlite"]
         assert comments[0].actor_id == create_user.id
@@ -236,7 +238,7 @@ class TestAnswerHumanRequest:
         states_moved = activities.filter(field="state").order_by("created_at")
         assert [(a.old_value, a.new_value) for a in states_moved] == [
             ("In Progress", AWAITING_HUMAN_STATE_NAME),
-            (AWAITING_HUMAN_STATE_NAME, "In Progress"),
+            (AWAITING_HUMAN_STATE_NAME, "Todo"),
         ]
         assert activities.filter(field="comment", verb="created").exists()
 
@@ -276,7 +278,7 @@ class TestAnswerHumanRequest:
         assert response.data["note"] == "wait for Monday"
         assert response.data["answer"] == "no - wait for Monday"
         bot_item.refresh_from_db()
-        assert bot_item.state_id == states.in_progress.id
+        assert bot_item.state_id == states.todo.id
         assert IssueComment.objects.get(issue=bot_item).comment_stripped == "Answer: no - wait for Monday"
 
     def test_ac3_approval_maybe_is_400_and_stays_open(self, workspace, project, states, bot, bot_item, human_api):
@@ -358,7 +360,7 @@ class TestAnswerHumanRequest:
         assert response.data["decision"] == "accept"
         assert response.data["note"] == "go ahead"
         bot_item.refresh_from_db()
-        assert bot_item.state_id == states.in_progress.id
+        assert bot_item.state_id == states.todo.id
         again = human_web.post(_web_url(workspace.slug, f"{request_id}/answer/"), {"answer": "yes"}, format="json")
         assert again.status_code == status.HTTP_409_CONFLICT
 
@@ -455,16 +457,15 @@ class TestHumanRequestEdgeCases:
         assert bot_item.state_id == done.id
         assert IssueComment.objects.get(issue=bot_item).comment_stripped == "Answer: yes"
 
-    def test_answer_resumes_the_first_started_state_when_the_remembered_one_was_deleted(
+    def test_asking_from_backlog_and_the_answer_moves_the_item_to_todo(
         self, workspace, project, states, create_user, bot, human_api
     ):
-        review = State.objects.create(
-            name="Review", group="started", sequence=38000, project=project, workspace=workspace
+        backlog = State.objects.create(
+            name="Backlog", group="backlog", sequence=15000, project=project, workspace=workspace
         )
-        issue = _create_issue(project, workspace, review, create_user, "In review", [bot.id])
+        issue = _create_issue(project, workspace, backlog, create_user, "Unclear", [bot.id])
         request_id = _open_request(bot, workspace, project, issue, "question", "Which DB for tests?")
-        assert HumanRequest.objects.get(pk=request_id).state_before_id == review.id
-        State.objects.filter(pk=review.pk).update(deleted_at=timezone.now())
+        assert HumanRequest.objects.get(pk=request_id).state_before_id == backlog.id
 
         response = human_api.post(
             _answer_url(workspace.slug, project.id, issue.id, request_id), {"answer": "use sqlite"}, format="json"
@@ -472,28 +473,32 @@ class TestHumanRequestEdgeCases:
 
         assert response.status_code == status.HTTP_200_OK, response.data
         issue.refresh_from_db()
-        assert issue.state_id == states.in_progress.id
+        assert issue.state_id == states.todo.id
 
-    @pytest.mark.parametrize("name,group", [("Done", "completed"), ("Cancelled", "cancelled")])
-    def test_asking_on_a_closed_item_resumes_the_first_started_state(
-        self, workspace, project, states, create_user, bot, human_api, name, group
+    @pytest.mark.parametrize(
+        "name,group", [("Todo", "unstarted"), ("Done", "completed"), ("Cancelled", "cancelled"), ("Review", "started")]
+    )
+    def test_asking_outside_backlog_or_in_progress_is_400(
+        self, workspace, project, states, create_user, bot, name, group
     ):
-        # The orchestrator asks after the worker closed the item (a failed check after the session):
-        # the answer means "keep working", so the item must not go back to Done or Cancelled.
-        closed = State.objects.create(name=name, group=group, sequence=60000, project=project, workspace=workspace)
-        issue = _create_issue(project, workspace, closed, create_user, "Closed too early", [bot.id])
-        request_id = _open_request(bot, workspace, project, issue, "question", "Continue?")
-        assert HumanRequest.objects.get(pk=request_id).state_before_id == closed.id
-
-        response = human_api.post(
-            _answer_url(workspace.slug, project.id, issue.id, request_id), {"answer": "continue"}, format="json"
+        # Only Backlog and In Progress may move to Awaiting Human (the work item state machine).
+        current = State.objects.filter(project=project, name=name).first() or State.objects.create(
+            name=name, group=group, sequence=60000, project=project, workspace=workspace
         )
+        issue = _create_issue(project, workspace, current, create_user, f"In {name}", [bot.id])
 
-        assert response.status_code == status.HTTP_200_OK, response.data
+        response = _ask(bot, workspace, project, issue, "question", "Continue?")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
+        assert name in response.data["error"]
+        assert response.data["current_state"] == name
+        assert response.data["requested_state"] == AWAITING_HUMAN_STATE_NAME
+        assert response.data["allowed_from_states"] == ["Backlog", "In Progress"]
+        assert not HumanRequest.objects.filter(issue=issue).exists()
         issue.refresh_from_db()
-        assert issue.state_id == states.in_progress.id
+        assert issue.state_id == current.id
 
-    def test_asking_on_an_item_already_awaiting_human_resumes_the_first_started_state(
+    def test_asking_on_an_item_already_awaiting_human_then_answer_moves_it_to_todo(
         self, workspace, project, states, create_user, bot, human_api
     ):
         issue = _create_issue(project, workspace, states.awaiting, create_user, "Waiting", [bot.id])
@@ -509,7 +514,26 @@ class TestHumanRequestEdgeCases:
         )
         assert answer.status_code == status.HTTP_200_OK, answer.data
         issue.refresh_from_db()
-        assert issue.state_id == states.in_progress.id
+        assert issue.state_id == states.todo.id
+
+    def test_answer_uses_the_default_unstarted_state_when_no_state_is_named_todo(
+        self, workspace, project, states, bot, bot_item, human_api
+    ):
+        State.objects.filter(pk=states.todo.pk).update(name="Ready")
+        later = State.objects.create(
+            name="Queued", group="unstarted", sequence=20000, project=project, workspace=workspace
+        )
+        request_id = _open_request(bot, workspace, project, bot_item, "question", "Which DB for tests?")
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, bot_item.id, request_id), {"answer": "use sqlite"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        bot_item.refresh_from_db()
+        # "Ready" is the project default; "Queued" comes first by sequence but is not the default.
+        assert bot_item.state_id == states.todo.id
+        assert later.id != states.todo.id
 
     def test_asking_in_a_project_without_awaiting_human_state_is_400(self, workspace, project, states, bot, bot_item):
         State.objects.filter(pk=states.awaiting.pk).update(name="Blocked")

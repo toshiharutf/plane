@@ -7,7 +7,7 @@ from importlib import import_module
 import pytest
 from django.apps import apps
 
-from plane.db.models import DEFAULT_STATES, ERROR_STATE_NAME, Project, State, StateGroup, Workspace
+from plane.db.models import DEFAULT_STATES, Project, State, Workspace
 
 migration = import_module("plane.db.migrations.0126_add_error_state")
 
@@ -135,13 +135,11 @@ class TestAddErrorStateMigration:
 
 @pytest.mark.unit
 class TestErrorStateDefaults:
-    def test_migration_matches_default_states(self):
-        default = next(state for state in DEFAULT_STATES if state["name"] == ERROR_STATE_NAME)
-
-        assert migration.ERROR_STATE == {key: default[key] for key in ("name", "color", "group")}
-        assert default["group"] == StateGroup.STARTED.value
+    def test_error_is_no_longer_a_default_state(self):
+        # 0131_remove_error_state removed it; 0126 stays as history.
+        assert "Error" not in [state["name"] for state in DEFAULT_STATES]
 
     def test_default_states_order(self):
         names = [state["name"] for state in sorted(DEFAULT_STATES, key=lambda state: state["sequence"])]
 
-        assert names == ["Backlog", "Todo", "In Progress", "Error", "Awaiting Human", "Done", "Cancelled", "Triage"]
+        assert names == ["Backlog", "Todo", "In Progress", "Awaiting Human", "Done", "Cancelled", "Triage"]

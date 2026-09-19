@@ -5,6 +5,7 @@
 # Module imports
 from .base import BaseSerializer
 from .issue import IssueExpandSerializer
+from plane.utils.work_item_state_rules import check_initial_state, current_actor
 from plane.db.models import IntakeIssue, Issue, State, StateGroup
 from rest_framework import serializers
 
@@ -132,6 +133,8 @@ class IntakeIssueUpdateSerializer(BaseSerializer):
                     raise serializers.ValidationError(
                         {"status": "Cannot accept intake issue: No default state found for the project"}
                     )
+                # Accepting puts the work item into the workflow, as creating it would
+                check_initial_state(current_actor(), default_state)
 
         return attrs
 

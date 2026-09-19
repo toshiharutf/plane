@@ -17,6 +17,7 @@ from .user import UserLiteSerializer
 from .state import StateLiteSerializer
 from .project import ProjectLiteSerializer
 from .workspace import WorkspaceLiteSerializer
+from plane.utils.work_item_state_rules import check_initial_state, check_state_change, current_actor
 from plane.db.models import (
     User,
     Issue,
@@ -200,6 +201,13 @@ class IssueCreateSerializer(BaseSerializer):
             ).exists()
         ):
             raise serializers.ValidationError("Estimate point is not valid please pass a valid estimate_point_id")
+
+        # The work item state machine (plane.utils.work_item_state_rules): 400 on a refused state
+        actor = current_actor()
+        if self.instance is None:
+            check_initial_state(actor, attrs.get("state"), self.context.get("project_id"))
+        elif attrs.get("state") is not None:
+            check_state_change(actor, self.instance, attrs["state"], attrs.get("assignee_ids") or ())
 
         return attrs
 
