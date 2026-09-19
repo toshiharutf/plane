@@ -151,6 +151,12 @@ def started_state(db, workspace, project):
 
 
 @pytest.fixture
+def awaiting_state(db, workspace, project):
+    """The state a ``[Human]`` ticket waits in; a bot creates such a ticket only here or in Backlog."""
+    return State.objects.create(name=AWAITING_HUMAN_STATE_NAME, group="started", project=project, workspace=workspace)
+
+
+@pytest.fixture
 def bot(session_client, workspace):
     """(bot user id, API-key authenticated client) for a workspace AI_AGENT bot."""
     return _create_bot(session_client, workspace, "Executor AI")
@@ -572,7 +578,7 @@ class TestAIBotWorkItemAccess:
         assert Issue.objects.filter(name__startswith="Rogue").count() == 0
 
     def test_bot_creates_unassigned_ticket_for_humans_that_blocks_its_work_item(
-        self, workspace, project, state, create_user, bot, monkeypatch
+        self, workspace, project, state, awaiting_state, create_user, bot, monkeypatch
     ):
         _stub_tasks(monkeypatch)
         bot_id, bot_client = bot
@@ -580,7 +586,7 @@ class TestAIBotWorkItemAccess:
 
         response = bot_client.post(
             _v1(workspace.slug, project.id, "work-items/"),
-            {"name": "[Human] choose where the script lives", "assignees": [], "state": str(state.id)},
+            {"name": "[Human] choose where the script lives", "assignees": [], "state": str(awaiting_state.id)},
             format="json",
         )
 
@@ -605,7 +611,7 @@ class TestAIBotWorkItemAccess:
         assert IssueRelation.objects.filter(issue=blocked, related_issue=ticket, relation_type="blocked_by").exists()
 
     def test_bot_creates_release_item_assigned_to_itself_with_sub_work_items(
-        self, session_client, workspace, project, state, create_user, bot, monkeypatch
+        self, session_client, workspace, project, state, awaiting_state, create_user, bot, monkeypatch
     ):
         _stub_tasks(monkeypatch)
         bot_id, bot_client = bot
@@ -652,6 +658,8 @@ class TestAIBotWorkItemAccess:
         assert child.status_code == status.HTTP_201_CREATED, child.data
         assert human_child.status_code == status.HTTP_201_CREATED, human_child.data
         assert not IssueAssignee.objects.filter(issue_id=human_child.data["id"]).exists()
+        # No state given: the approval waits for the person in Awaiting Human.
+        assert str(human_child.data["state"]) == str(awaiting_state.id)
         # The approval sub work item stays out of the bot's reach.
         approve = bot_client.patch(
             _v1(workspace.slug, project.id, f"work-items/{human_child.data['id']}/"),
@@ -1067,7 +1075,7 @@ class TestAIBotPlannedWorkItemAccess:
         assert str(Issue.objects.get(pk=implicit.data["id"]).created_by_id) == bot_id
 
     def test_bot_cannot_create_human_tickets_assigned_to_itself(
-        self, workspace, project, state, create_user, bot, monkeypatch
+        self, workspace, project, state, awaiting_state, create_user, bot, monkeypatch
     ):
         _stub_tasks(monkeypatch)
         bot_id, bot_client = bot
@@ -1257,7 +1265,7 @@ class TestAIBotPlannedWorkItemAccess:
         assert not child.assignees.exists()
 
     def test_bot_sub_items_under_its_own_parent_follow_the_top_level_rules(
-        self, workspace, project, state, create_user, bot, monkeypatch
+        self, workspace, project, state, awaiting_state, create_user, bot, monkeypatch
     ):
         _stub_tasks(monkeypatch)
         bot_id, bot_client = bot
@@ -1362,6 +1370,226 @@ class TestAIBotPlannedWorkItemAccess:
         assert response.status_code == status.HTTP_200_OK, response.data
         item.refresh_from_db()
         assert item.state_id == done.id
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAIBotHumanItemsStayHumanOnly:
+    """``[Human]`` items stay human-only: a bot never assigns, renames or closes one, whoever is assigned to it."""
+
+    PERMISSION = "[Human] permission to push to git remote and deploy to vps"
+
+    @pytest.fixture
+    def closing_states(self, workspace, project):
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        cancelled = State.objects.create(name="Cancelled", group="cancelled", project=project, workspace=workspace)
+        return done, cancelled
+
+    def test_bot_posts_the_permission_sub_item_unassigned_and_cannot_close_it(
+        self, workspace, project, state, started_state, awaiting_state, closing_states, create_user, bot, monkeypatch
+    ):
+        # AC1 example: POST the sub item with assignees [] -> 201 in Awaiting Human; then PATCH {state: Done} -> 403.
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        done, cancelled = closing_states
+        release = _create_issue_by(bot_id, project, workspace, started_state, "[Release] - develop", [bot_id])
+
+        response = bot_client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": self.PERMISSION, "parent": str(release.id), "assignees": []},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        ticket = Issue.objects.get(pk=response.data["id"])
+        assert ticket.parent_id == release.id
+        assert ticket.state_id == awaiting_state.id
+        assert not IssueAssignee.objects.filter(issue=ticket).exists()
+
+        url = _v1(workspace.slug, project.id, f"work-items/{ticket.id}/")
+        for target in (done, cancelled):
+            response = bot_client.patch(url, {"state": str(target.id)}, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, target.name
+        ticket.refresh_from_db()
+        assert ticket.state_id == awaiting_state.id
+
+    def test_bot_creates_human_items_only_with_an_empty_assignee_list(
+        self, workspace, project, state, awaiting_state, create_user, bot, monkeypatch
+    ):
+        # AC1: top-level, under a parent the bot holds, and under a parent it planned: only ``assignees: []``.
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        held = _create_issue(project, workspace, state, create_user, "Bot task", [bot_id])
+        planned = _create_issue_by(bot_id, project, workspace, state, "Planned epic")
+        url = _v1(workspace.slug, project.id, "work-items/")
+
+        for parent in (None, held, planned):
+            where = {"parent": str(parent.id)} if parent is not None else {}
+            for assignees in (
+                {},  # would be auto-assigned to the bot
+                {"assignees": [bot_id]},
+                {"assignees": [str(create_user.id)]},
+                {"assignees": [bot_id, str(create_user.id)]},
+                {"assignees": None},
+                {"assignees": bot_id},
+            ):
+                for name in ("[Human] Approve it", "  [human] approve it"):
+                    response = bot_client.post(url, {"name": name, **where, **assignees}, format="json")
+                    assert response.status_code == status.HTTP_403_FORBIDDEN, (where, assignees, name)
+        assert not Issue.objects.filter(name__icontains="approve it").exists()
+
+        for parent in (None, held, planned):
+            where = {"parent": str(parent.id)} if parent is not None else {}
+            response = bot_client.post(url, {"name": "[Human] Approve it", **where, "assignees": []}, format="json")
+            assert response.status_code == status.HTTP_201_CREATED, (where, response.data)
+            assert not IssueAssignee.objects.filter(issue_id=response.data["id"]).exists()
+            assert str(response.data["state"]) == str(awaiting_state.id)
+
+        # Form data follows the same rule.
+        response = bot_client.post(url, {"name": "[Human] Approve it", "parent": str(held.id)}, format="multipart")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        # Sub items that are not [Human] tickets are still assigned to the bot.
+        response = bot_client.post(url, {"name": "Local testing", "parent": str(held.id)}, format="json")
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assignees = IssueAssignee.objects.filter(issue_id=response.data["id"]).values_list("assignee_id", flat=True)
+        assert {str(assignee) for assignee in assignees} == {bot_id}
+
+    def test_bot_cannot_rename_a_work_item_to_or_from_a_human_name(
+        self, workspace, project, state, awaiting_state, create_user, bot, monkeypatch
+    ):
+        # AC2: 403 in both directions, even on work items the bot is assigned to.
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        url = lambda issue: _v1(workspace.slug, project.id, f"work-items/{issue.id}/")  # noqa: E731
+        task = _create_issue(project, workspace, state, create_user, "Bot task", [bot_id])
+        planned = _create_issue_by(bot_id, project, workspace, state, "Planned")
+        held_gate = _create_issue(project, workspace, awaiting_state, create_user, "[Human] Approve release", [bot_id])
+        own_gate = _create_issue_by(bot_id, project, workspace, awaiting_state, "[Human] Approve plan")
+
+        for issue, names in (
+            (task, ("[Human] Approve release of develop abc123", " [human] forged", "[HUMAN]")),
+            (planned, ("[Human] Approve plan",)),
+            (held_gate, ("Taken over", "[Human] Approve release of another commit", "")),
+            (own_gate, ("Taken over", "[Human] Approve another plan")),
+        ):
+            original = issue.name
+            for name in names:
+                for body in ({"name": name}, {"name": name, "description_html": "<p>edited</p>"}):
+                    response = bot_client.patch(url(issue), body, format="json")
+                    assert response.status_code == status.HTTP_403_FORBIDDEN, (original, body)
+            issue.refresh_from_db()
+            assert issue.name == original
+            assert issue.description_html != "<p>edited</p>"
+
+        # Not a rename: the bot still renames its ordinary work, and may resend an unchanged name.
+        response = bot_client.patch(url(task), {"name": "Bot task, refined"}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+        response = bot_client.patch(url(held_gate), {"name": "[Human] Approve release"}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+
+    def test_bot_cannot_assign_anyone_to_a_human_item_or_close_it(
+        self, workspace, project, state, awaiting_state, closing_states, create_user, bot, monkeypatch
+    ):
+        # AC3: 403, also when a person assigned the bot to the [Human] item.
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        done, cancelled = closing_states
+        closed_lookalike = State.objects.create(
+            name="awaiting human ", group="completed", project=project, workspace=workspace
+        )
+        url = lambda issue: _v1(workspace.slug, project.id, f"work-items/{issue.id}/")  # noqa: E731
+        held_gate = _create_issue(project, workspace, awaiting_state, create_user, "[Human] Approve release", [bot_id])
+        own_gate = _create_issue_by(bot_id, project, workspace, awaiting_state, "[human] approve plan")
+        foreign_gate = _create_issue(project, workspace, awaiting_state, create_user, "[Human] Decide")
+
+        for gate in (held_gate, own_gate, foreign_gate):
+            for body in (
+                {"assignees": [bot_id]},
+                {"assignees": [str(create_user.id)]},
+                {"assignees": [bot_id, str(create_user.id)]},
+                {"assignees": bot_id},
+                {"state": str(done.id)},
+                {"state": str(cancelled.id)},
+                {"state": str(closed_lookalike.id)},
+                {"state": str(done.id), "assignees": []},
+                {"description_html": "<p>approved</p>", "state": str(done.id)},
+            ):
+                response = bot_client.patch(url(gate), body, format="json")
+                assert response.status_code == status.HTTP_403_FORBIDDEN, (gate.name, body)
+            gate.refresh_from_db()
+            assert gate.state_id == awaiting_state.id
+        assert {
+            str(a) for a in IssueAssignee.objects.filter(issue=held_gate).values_list("assignee_id", flat=True)
+        } == {bot_id}
+        assert not IssueAssignee.objects.filter(issue__in=[own_gate, foreign_gate]).exists()
+
+        # Form data follows the same rule.
+        response = bot_client.patch(url(held_gate), {"state": str(done.id)}, format="multipart")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        # The bot still closes its ordinary work.
+        in_progress = State.objects.create(name="In Progress", group="started", project=project, workspace=workspace)
+        task = _create_issue(project, workspace, in_progress, create_user, "Bot task", [bot_id])
+        response = bot_client.patch(url(task), {"state": str(done.id)}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+
+    def test_humans_still_assign_rename_and_close_human_items(
+        self, workspace, project, state, awaiting_state, closing_states, create_user, bot, human_client, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, _ = bot
+        done, _cancelled = closing_states
+        gate = _create_issue_by(bot_id, project, workspace, awaiting_state, self.PERMISSION)
+        url = _v1(workspace.slug, project.id, f"work-items/{gate.id}/")
+
+        for body in (
+            {"assignees": [str(create_user.id)]},
+            {"name": "[Human] permission to deploy"},
+            {"state": str(done.id)},
+        ):
+            response = human_client.patch(url, body, format="json")
+            assert response.status_code == status.HTTP_200_OK, (body, response.data)
+        gate.refresh_from_db()
+        assert gate.state_id == done.id
+
+    def test_orchestrator_human_tickets_and_gate_moves_keep_working(
+        self, workspace, project, state, awaiting_state, closing_states, create_user, bot, human_client, monkeypatch
+    ):
+        # AC4: the release approval sub item, the blocker ticket and the planner's gates (T35 moves).
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        done, _cancelled = closing_states
+        backlog = State.objects.create(name="Backlog", group="backlog", project=project, workspace=workspace)
+        items = _v1(workspace.slug, project.id, "work-items/")
+        url = lambda issue_id: _v1(workspace.slug, project.id, f"work-items/{issue_id}/")  # noqa: E731
+
+        release = bot_client.post(items, {"name": "[Release] - develop", "state": str(state.id)}, format="json")
+        assert release.status_code == status.HTTP_201_CREATED, release.data
+        approval = bot_client.post(
+            items, {"name": self.PERMISSION, "parent": release.data["id"], "assignees": []}, format="json"
+        )
+        blocker = bot_client.post(
+            items,
+            {"name": "[Human] Approve release of develop abc123", "assignees": [], "state": str(awaiting_state.id)},
+            format="json",
+        )
+        for ticket in (approval, blocker):
+            assert ticket.status_code == status.HTTP_201_CREATED, ticket.data
+            assert str(ticket.data["state"]) == str(awaiting_state.id)
+
+        # The planner writes its gates in Backlog and hands them over when the cycle starts.
+        for path in ((awaiting_state,), (state, awaiting_state)):
+            gate = bot_client.post(
+                items, {"name": "[Human] G5 gate", "assignees": [], "state": str(backlog.id)}, format="json"
+            )
+            assert gate.status_code == status.HTTP_201_CREATED, gate.data
+            for target in path:
+                response = bot_client.patch(url(gate.data["id"]), {"state": str(target.id)}, format="json")
+                assert response.status_code == status.HTTP_200_OK, (target.name, response.data)
+            assert Issue.objects.get(pk=gate.data["id"]).state_id == awaiting_state.id
+
+        # The person answers by closing the ticket.
+        response = human_client.patch(url(approval.data["id"]), {"state": str(done.id)}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
 
 
 @pytest.mark.contract

@@ -35,6 +35,12 @@ narrower set of rights (public ``/api/v1`` views only):
   moves one to Cancelled or to a custom state. An unassigned ``[Human]``
   ticket also goes Todo -> Awaiting Human, and a bot never moves it out of
   Awaiting Human: it hands the ticket to a person and cannot take it back.
+  ``[Human]`` work items stay human-only, whoever is assigned to them and
+  whatever other rule matches (403): a bot creates one (top-level or sub item)
+  only with ``assignees`` given as an empty list, in Backlog or Awaiting Human
+  (none given: Awaiting Human; any other state is a 400), never renames a work
+  item to or from a ``[Human]`` name, never assigns anyone to a ``[Human]``
+  item, and never moves one into the ``completed`` or ``cancelled`` group.
 - Cycles: read, create, update the name, description and dates, add work
   items and transfer the open ones to another cycle; never delete or archive.
 - Modules: read, create, update the name, description, status and dates, and
@@ -177,6 +183,51 @@ def _requests_top_level_item(data, user_id):
     return _requests_only_self_assigned(data, user_id) and not _is_human_ticket_name(data.get("name"))
 
 
+def _requests_forbidden_human_item_create(data):
+    """True for a ``POST`` of a ``[Human] ...`` work item that is not explicitly unassigned.
+
+    Without ``assignees`` the create view would assign the bot, and the assignee of a work item
+    may close it: a ``[Human]`` item a bot creates (top-level or sub item) has ``assignees: []``.
+    """
+    return _is_human_ticket_name(data.get("name")) and not _requests_unassigned(data)
+
+
+def _requests_forbidden_human_item_update(request, view, issue_id):
+    """True for a ``PATCH`` that would let a bot take over a ``[Human] ...`` work item.
+
+    Checked before every other ``PATCH`` rule, so being assigned to the item does not help:
+
+    - ``name`` changes to, or away from, a ``[Human]`` name (the same name again is not a rename);
+    - on a ``[Human]`` item, ``assignees`` names anybody (``[]`` assigns nobody and stays allowed);
+    - on a ``[Human]`` item, ``state`` is a state of the ``completed`` or ``cancelled`` group.
+    """
+    data = request.data
+    if not _is_uuid(issue_id):
+        return False
+    issue = (
+        Issue.objects.filter(pk=issue_id, project_id=view.project_id, workspace__slug=view.workspace_slug)
+        .only("name")
+        .first()
+    )
+    if issue is None:
+        return False
+    is_human_item = _is_human_ticket_name(issue.name)
+    if "name" in data:
+        name = data.get("name")
+        if (is_human_item or _is_human_ticket_name(name)) and str(name if name is not None else "") != issue.name:
+            return True
+    if not is_human_item:
+        return False
+    if "assignees" in data and _requested_assignees(data) != []:
+        return True
+    state_id = data.get("state") if "state" in data else None
+    return bool(
+        state_id
+        and _is_uuid(state_id)
+        and State.all_state_objects.filter(pk=state_id, group__in=CLOSED_STATE_GROUPS).exists()
+    )
+
+
 # Fields a bot may change on a work item it created (see ``_requests_update_of_own_planned_item``).
 OWN_ITEM_PATCH_FIELDS = {
     "name",
@@ -194,7 +245,10 @@ OWN_ITEM_PATCH_FIELDS = {
 
 
 def _is_own_planned_item(issue_id, project_id, workspace_slug, user_id):
-    """True for a work item of the project the bot created, that is not a ``[Human]`` ticket and has no assignee but the bot."""
+    """True for a work item of the project the bot created that is one of its planned items.
+
+    It is not a ``[Human]`` ticket and has no assignee but the bot.
+    """
     issue = Issue.objects.filter(
         pk=issue_id, project_id=project_id, workspace__slug=workspace_slug, created_by_id=user_id
     ).first()
@@ -272,8 +326,11 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
     unassigned or self-assigned children of their own planned items (the same
     parents ``_is_allowed_parent`` accepts for a ``PATCH`` of ``parent``), or as
     top-level work items that are unassigned (``assignees`` given explicitly as
-    an empty list) or assigned only to themselves. A top-level ``[Human] ...``
-    ticket must be unassigned, so the bot cannot work on a human's decision.
+    an empty list) or assigned only to themselves. A ``[Human] ...`` work item
+    must be created unassigned wherever it goes, and no ``PATCH`` renames a work
+    item to or from a ``[Human]`` name, assigns anyone to a ``[Human]`` item or
+    closes one (``_requests_forbidden_human_item_update``), so the bot cannot
+    work on, or answer, a human's decision.
     """
 
     def has_permission(self, request, view):
@@ -292,6 +349,8 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
 
         if request.method == "PATCH":
             issue_id = view.kwargs.get("pk")
+            if issue_id and _requests_forbidden_human_item_update(request, view, issue_id):
+                return False
             return bool(
                 issue_id
                 and (
@@ -302,6 +361,8 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
             )
 
         if request.method == "POST":
+            if _requests_forbidden_human_item_create(request.data):
+                return False
             parent_id = request.data.get("parent")
             if parent_id is None:
                 return _requests_top_level_item(request.data, request.user.id)

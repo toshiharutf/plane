@@ -20,6 +20,7 @@ from rest_framework.test import APIClient
 
 from plane.db.models import Issue, IssueAssignee, Project, ProjectMember, State
 from plane.utils.work_item_state_rules import (
+    HUMAN_TICKET_INITIAL_STATES,
     HUMAN_TICKET_STATE_TRANSITIONS,
     IN_REVIEW,
     STATE_DISPLAY_NAMES,
@@ -410,6 +411,97 @@ class TestBotCreatesWorkItems:
         )
 
         assert response.status_code == status.HTTP_201_CREATED, response.data
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestBotCreatesHumanWorkItems:
+    """A ``[Human]`` work item a bot creates starts in Backlog or Awaiting Human (none given: Awaiting Human)."""
+
+    NAME = "[Human] permission to push to git remote and deploy to vps"
+
+    def _post(self, bot, workspace, project, **body):
+        return bot.client.post(
+            _v1(workspace.slug, project.id, "work-items/"), {"name": self.NAME, "assignees": [], **body}, format="json"
+        )
+
+    def test_initial_states_of_a_human_ticket(self):
+        assert HUMAN_TICKET_INITIAL_STATES == {"backlog", "awaiting human"}
+
+    @pytest.mark.parametrize("initial", ["backlog", "awaiting"])
+    def test_backlog_and_awaiting_human_are_accepted(self, workspace, project, states, bot, initial):
+        response = self._post(bot, workspace, project, state=str(getattr(states, initial).id))
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert Issue.objects.get(pk=response.data["id"]).state_id == getattr(states, initial).id
+
+    def test_no_state_means_awaiting_human_not_the_project_default(self, workspace, project, states, bot):
+        # The project default is Backlog; a [Human] ticket still waits for the person.
+        for body in ({}, {"state": None}, {"state": ""}):
+            response = self._post(bot, workspace, project, **body)
+
+            assert response.status_code == status.HTTP_201_CREATED, (body, response.data)
+            issue = Issue.objects.get(pk=response.data["id"])
+            assert issue.state_id == states.awaiting.id, body
+            assert not IssueAssignee.objects.filter(issue=issue).exists()
+
+    @pytest.mark.parametrize("initial", ["todo", "in_progress", "done", "cancelled", "review"])
+    def test_other_initial_states_are_400(self, workspace, project, states, bot, initial):
+        response = self._post(bot, workspace, project, state=str(getattr(states, initial).id))
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
+        assert response.data["allowed_states"] == ["Backlog", "Awaiting Human"]
+        assert response.data["requested_state"] == getattr(states, initial).name
+        assert "[Human]" in response.data["error"]
+        assert not Issue.objects.filter(project=project).exists()
+
+    def test_a_closing_state_named_awaiting_human_is_400(self, workspace, project, states, bot):
+        State.objects.filter(pk=states.awaiting.pk).update(name="Waiting")
+        forged = State.objects.create(
+            name="Awaiting Human", group="completed", sequence=70000, project=project, workspace=workspace
+        )
+
+        response = self._post(bot, workspace, project, state=str(forged.id))
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
+        assert not Issue.objects.filter(project=project).exists()
+        # ... and it is not picked as the default either: the project default (Backlog) applies.
+        response = self._post(bot, workspace, project)
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert Issue.objects.get(pk=response.data["id"]).state_id == states.backlog.id
+
+    def test_project_without_awaiting_human_uses_its_default_state(self, workspace, project, states, bot):
+        State.objects.filter(pk=states.awaiting.pk).delete()
+
+        response = self._post(bot, workspace, project)
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert Issue.objects.get(pk=response.data["id"]).state_id == states.backlog.id
+
+        # A default outside Backlog and Awaiting Human is refused, Todo included.
+        State.objects.filter(pk=states.backlog.pk).update(default=False)
+        State.objects.filter(pk=states.todo.pk).update(default=True)
+        response = self._post(bot, workspace, project)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
+        assert response.data["requested_state"] == "Todo"
+
+    def test_other_bot_items_still_start_in_todo(self, workspace, project, states, bot):
+        response = bot.client.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": "Rogue [Human] note", "state": str(states.todo.id)},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+
+    def test_humans_create_human_tickets_in_any_state(self, workspace, project, states, create_user, human_api):
+        response = human_api.post(
+            _v1(workspace.slug, project.id, "work-items/"),
+            {"name": self.NAME, "state": str(states.todo.id), "assignees": [str(create_user.id)]},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert Issue.objects.get(pk=response.data["id"]).state_id == states.todo.id
 
 
 @pytest.mark.contract

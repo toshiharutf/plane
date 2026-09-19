@@ -13,6 +13,7 @@ from plane.app.permissions.ai_bot import (
     OWN_UNASSIGNED_ITEM_STATE_GROUPS,
     _is_human_ticket_name,
     _requested_assignees,
+    _requests_forbidden_human_item_create,
     _requests_only_self_assigned,
     _requests_top_level_item,
     _requests_unassigned,
@@ -118,6 +119,30 @@ class TestRequestsTopLevelItem:
             "ai_model",
             "parent",
         }
+
+
+@pytest.mark.unit
+class TestRequestsForbiddenHumanItemCreate:
+    """Test that a ``[Human]`` work item is only created with an explicit empty ``assignees`` list"""
+
+    def test_human_items_need_an_explicit_empty_list(self):
+        bot_id = str(uuid.uuid4())
+        for name in ("[Human] approve release", "[human] approve", "  [HUMAN] approve"):
+            assert _requests_forbidden_human_item_create({"name": name, "assignees": []}) is False, name
+            assert _requests_forbidden_human_item_create(_form([("name", name), ("assignees", "")])) is False, name
+            # Without ``assignees`` the create view would assign the bot.
+            assert _requests_forbidden_human_item_create({"name": name}) is True, name
+            assert _requests_forbidden_human_item_create(_form([("name", name)])) is True, name
+            for assignees in ([bot_id], [str(uuid.uuid4())], None, bot_id):
+                body = {"name": name, "assignees": assignees, "parent": str(uuid.uuid4())}
+                assert _requests_forbidden_human_item_create(body) is True, (name, assignees)
+            assert _requests_forbidden_human_item_create(_form([("name", name), ("assignees", bot_id)])) is True, name
+
+    def test_other_names_are_left_to_the_other_rules(self):
+        bot_id = str(uuid.uuid4())
+        for name in ("Planned", "[Release] - develop", "Rogue [Human] note", "Human: decide", None):
+            for body in ({"name": name}, {"name": name, "assignees": [bot_id]}, {"name": name, "assignees": []}):
+                assert _requests_forbidden_human_item_create(body) is False, body
 
 
 @pytest.mark.unit

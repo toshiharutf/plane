@@ -157,7 +157,7 @@ class IssueSerializer(BaseSerializer):
         # The work item state machine (plane.utils.work_item_state_rules): 400 on a refused state
         actor = current_actor()
         if self.instance is None:
-            check_initial_state(actor, data.get("state"), self.context.get("project_id"))
+            check_initial_state(actor, data.get("state"), self.context.get("project_id"), name=data.get("name"))
         elif data.get("state") is not None:
             check_state_change(actor, self.instance, data["state"], data.get("assignees") or ())
 
