@@ -163,6 +163,7 @@ from plane.utils.openapi import (
 )
 from plane.bgtasks.work_item_link_task import crawl_work_item_link_title
 from plane.utils.members import is_ai_agent_user, is_workspace_ai_agent
+from plane.utils.work_item_state_rules import human_ticket_default_state, is_human_ticket_name
 
 
 def user_has_issue_permission(user_id, project_id, issue=None, allowed_roles=None, allow_creator=True):
@@ -473,15 +474,24 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
         project = Project.objects.get(pk=project_id)
 
         data = request.data
-        if is_ai_agent_user(request.user) and "assignees" not in data:
+        is_bot_human_ticket = is_ai_agent_user(request.user) and is_human_ticket_name(data.get("name"))
+        if is_ai_agent_user(request.user) and "assignees" not in data and not is_bot_human_ticket:
             # An AI bot creates sub work items of its own work items; keep the
             # new item assigned to the bot unless it sets assignees explicitly
-            # (an empty list leaves a ticket for humans unassigned).
+            # (an empty list leaves a ticket for humans unassigned). A [Human]
+            # ticket is never assigned to the bot: its assignee could close it.
             data = data.copy()
             if hasattr(data, "setlist"):
                 data.setlist("assignees", [str(request.user.id)])
             else:
                 data["assignees"] = [str(request.user.id)]
+        if is_bot_human_ticket and not data.get("state"):
+            # A [Human] ticket a bot creates waits for a person: Awaiting Human unless
+            # the bot asks for Backlog (the serializer refuses every other state).
+            awaiting_human = human_ticket_default_state(project_id)
+            if awaiting_human is not None:
+                data = data.copy()
+                data["state"] = str(awaiting_human.id)
 
         serializer = IssueSerializer(
             data=data,

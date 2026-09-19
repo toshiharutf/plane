@@ -25,7 +25,8 @@ person and never takes it back, starts it or closes it::
     Done           -> (final)
 
 On such a ticket a target state of the ``completed`` or ``cancelled`` group is
-refused whatever its name is.
+refused whatever its name is. A bot creates a ``[Human]`` work item only in
+Backlog or Awaiting Human (the API picks Awaiting Human when no state is given).
 
 Who is checked:
 
@@ -85,6 +86,9 @@ HUMAN_ITEM_PREFIX = "[Human]"
 
 # The states a bot may create a work item in.
 INITIAL_STATES = frozenset({BACKLOG, TODO, AWAITING_HUMAN})
+
+# The states a bot may create a ``[Human] ...`` work item in: it waits for its cycle or for a person, never for a bot.
+HUMAN_TICKET_INITIAL_STATES = frozenset({BACKLOG, AWAITING_HUMAN})
 
 STATE_DISPLAY_NAMES = {
     BACKLOG: "Backlog",
@@ -252,10 +256,24 @@ def default_state(project_id):
     return states.filter(default=True).first() or states.first()
 
 
-def check_initial_state(actor, state, project_id=None):
+def human_ticket_default_state(project_id):
+    """The state a ``[Human]`` work item a bot creates gets when none is given: the project's Awaiting Human state.
+
+    ``None`` when the project has no such open state; the project's default state then applies.
+    """
+    return (
+        State.objects.filter(project_id=project_id, name__iexact=STATE_DISPLAY_NAMES[AWAITING_HUMAN])
+        .exclude(group__in=CLOSED_STATE_GROUPS)
+        .first()
+    )
+
+
+def check_initial_state(actor, state, project_id=None, name=None):
     """Raise ``WorkItemStateTransitionError`` when a bot creates a work item outside Backlog, Todo, Awaiting Human.
 
     ``state`` ``None`` means the project's default state (``project_id`` is then needed).
+    ``name`` is the name of the new work item: a ``[Human] ...`` one is created only in Backlog
+    or Awaiting Human, and never in a state of the ``completed`` or ``cancelled`` group.
     People are never checked here.
     """
     if actor is None or not is_ai_agent_user(actor):
@@ -264,12 +282,14 @@ def check_initial_state(actor, state, project_id=None):
         state = default_state(project_id)
     if state is None:
         return
-    if state_key(state.name) in INITIAL_STATES:
+    human_ticket = is_human_ticket_name(name)
+    allowed = HUMAN_TICKET_INITIAL_STATES if human_ticket else INITIAL_STATES
+    if state_key(state.name) in allowed and not (human_ticket and state.group in CLOSED_STATE_GROUPS):
         return
-    allowed_names = _display(INITIAL_STATES)
+    allowed_names = _display(allowed)
+    what = f"a {HUMAN_ITEM_PREFIX} work item" if human_ticket else "a work item"
     raise WorkItemStateTransitionError(
-        f"An AI agent bot cannot create a work item in {state.name}. Allowed initial states: "
-        f"{', '.join(allowed_names)}.",
+        f"An AI agent bot cannot create {what} in {state.name}. Allowed initial states: {', '.join(allowed_names)}.",
         current_state=None,
         requested_state=state.name,
         allowed_states=allowed_names,
