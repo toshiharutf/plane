@@ -10,7 +10,9 @@ with role >= member) authenticated through an API key gets an additional,
 narrower set of rights (public ``/api/v1`` views only):
 
 - Work items: read everything, update only work items it is assigned to,
-  create sub work items under work items it is assigned to, and create
+  create sub work items under work items it is assigned to or under work items
+  it created that are not ``[Human]`` tickets and have no assignee but itself
+  (such sub items unassigned or assigned only to itself), and create
   top-level work items that are unassigned or assigned only to itself. A
   top-level ``[Human] ...`` ticket must be unassigned, so the bot never works
   on a human's decision. On unassigned work items it created, it may move the
@@ -21,8 +23,8 @@ narrower set of rights (public ``/api/v1`` views only):
   tickets and have no assignee but itself, it may
   update the planning fields (name, description, priority, estimate point,
   labels, dates, AI model, parent, state and assignees): assignees only to
-  nobody or to itself alone, the parent only to nothing or to a work item it
-  created or is assigned to, and the state never to a ``completed`` group state
+  nobody or to itself alone, the parent only to nothing or to a parent it may
+  create sub items under, and the state never to a ``completed`` group state
   (the bot never closes planned items as Done).
   On top of these permissions, every state a bot sets follows the work item
   state machine (``plane.utils.work_item_state_rules``, enforced by the issue
@@ -190,14 +192,41 @@ OWN_ITEM_PATCH_FIELDS = {
 }
 
 
+def _is_own_planned_item(issue_id, project_id, workspace_slug, user_id):
+    """True for a work item of the project the bot created, that is not a ``[Human]`` ticket and has no assignee but the bot."""
+    issue = Issue.objects.filter(
+        pk=issue_id, project_id=project_id, workspace__slug=workspace_slug, created_by_id=user_id
+    ).first()
+    if issue is None or _is_human_ticket_name(issue.name):
+        return False
+    return (
+        not IssueAssignee.objects.filter(issue_id=issue_id, deleted_at__isnull=True)
+        .exclude(assignee_id=user_id)
+        .exists()
+    )
+
+
+def _is_allowed_parent(parent_id, project_id, workspace_slug, user_id):
+    """True when a bot may put a work item under ``parent_id``, by ``POST`` or by ``PATCH`` of ``parent``.
+
+    The parent is a work item of the project that the bot is assigned to, or one of its own planned
+    items (``_is_own_planned_item``): the planner writes sub items under unassigned future-cycle items.
+    """
+    if not _is_uuid(parent_id):
+        return False
+    return is_issue_assigned_to_user(parent_id, project_id, workspace_slug, user_id) or _is_own_planned_item(
+        parent_id, project_id, workspace_slug, user_id
+    )
+
+
 def _requests_update_of_own_planned_item(request, view, issue_id):
     """True for a ``PATCH`` of planning fields on a work item the bot created.
 
     The item must be in the view's project, created by the bot (``created_by``), not a ``[Human]``
     ticket, and have no assignee but the bot. ``assignees`` may only become ``[]`` or ``[bot]``,
     ``state`` must be a non-``completed`` state of the project, ``parent`` must be null or another
-    work item of the project that the bot created or is assigned to, and ``name`` may not turn
-    the item into a ``[Human]`` ticket.
+    work item of the project that ``_is_allowed_parent`` accepts, and ``name`` may not turn the
+    item into a ``[Human]`` ticket.
     """
     data = request.data
     keys = set(data.keys())
@@ -206,18 +235,7 @@ def _requests_update_of_own_planned_item(request, view, issue_id):
     user_id = str(request.user.id)
     project_id = view.project_id
     workspace_slug = view.workspace_slug
-    issue = Issue.objects.filter(
-        pk=issue_id, project_id=project_id, workspace__slug=workspace_slug, created_by_id=request.user.id
-    ).first()
-    if issue is None or _is_human_ticket_name(issue.name):
-        return False
-    current = {
-        str(assignee_id)
-        for assignee_id in IssueAssignee.objects.filter(issue_id=issue_id, deleted_at__isnull=True).values_list(
-            "assignee_id", flat=True
-        )
-    }
-    if not current <= {user_id}:
+    if not _is_own_planned_item(issue_id, project_id, workspace_slug, request.user.id):
         return False
     if "name" in keys and _is_human_ticket_name(data.get("name")):
         return False
@@ -235,14 +253,9 @@ def _requests_update_of_own_planned_item(request, view, issue_id):
             return False
     if "parent" in keys and data.get("parent") is not None:
         parent_id = data.get("parent")
-        if not _is_uuid(parent_id) or str(parent_id) == str(issue_id):
+        if str(parent_id) == str(issue_id):
             return False
-        if not (
-            Issue.objects.filter(
-                pk=parent_id, project_id=project_id, workspace__slug=workspace_slug, created_by_id=request.user.id
-            ).exists()
-            or is_issue_assigned_to_user(parent_id, project_id, workspace_slug, request.user.id)
-        ):
+        if not _is_allowed_parent(parent_id, project_id, workspace_slug, request.user.id):
             return False
     return True
 
@@ -254,7 +267,9 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
     move unassigned work items they created to Backlog, Todo or Awaiting Human, and update the
     planning fields of work items they created (see
     ``_requests_update_of_own_planned_item``). They may ``POST`` new work items
-    either as children (``parent``) of work items they are assigned to, or as
+    either as children (``parent``) of work items they are assigned to, as
+    unassigned or self-assigned children of their own planned items (the same
+    parents ``_is_allowed_parent`` accepts for a ``PATCH`` of ``parent``), or as
     top-level work items that are unassigned (``assignees`` given explicitly as
     an empty list) or assigned only to themselves. A top-level ``[Human] ...``
     ticket must be unassigned, so the bot cannot work on a human's decision.
@@ -287,13 +302,17 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
 
         if request.method == "POST":
             parent_id = request.data.get("parent")
-            if parent_id is None and _requests_top_level_item(request.data, request.user.id):
+            if parent_id is None:
+                return _requests_top_level_item(request.data, request.user.id)
+            if not _is_uuid(parent_id):
+                return False
+            if is_issue_assigned_to_user(parent_id, project_id, view.workspace_slug, request.user.id):
                 return True
-            return bool(
-                parent_id
-                and _is_uuid(parent_id)
-                and is_issue_assigned_to_user(parent_id, project_id, view.workspace_slug, request.user.id)
-            )
+            # Under its own planned item the sub item follows the top-level rules:
+            # unassigned, or assigned only to the bot and not a ``[Human]`` ticket.
+            return _is_own_planned_item(
+                parent_id, project_id, view.workspace_slug, request.user.id
+            ) and _requests_top_level_item(request.data, request.user.id)
 
         return False
 
