@@ -351,6 +351,32 @@ class TestBotTransitions:
         # Done stays final.
         assert _patch_state(bot.client, workspace, project, issue, states.in_review).status_code == 400
 
+    def test_in_review_is_no_way_for_a_bot_to_close_a_human_item(self, workspace, project, states, create_user, bot):
+        # In Review -> Done is a bot move on ordinary work; a [Human] item stays with the person all the same,
+        # also when a person assigned the bot to it.
+        held = _create_issue(project, workspace, states.in_review, create_user, "[Human] Approve release", [bot.id])
+        for target in (states.done, states.cancelled):
+            response = _patch_state(bot.client, workspace, project, held, target)
+            assert response.status_code == status.HTTP_403_FORBIDDEN, target.name
+        assert _state_of(held) == states.in_review.id
+
+        # The same walk on the bot's ordinary work item closes it.
+        task = _create_issue(project, workspace, states.in_review, create_user, "Bot task", [bot.id])
+        assert _patch_state(bot.client, workspace, project, task, states.done).status_code == 200
+
+    def test_bot_never_moves_its_unassigned_human_ticket_into_in_review(
+        self, workspace, project, states, create_user, bot
+    ):
+        # In Review is no gate state: the bot's only moves on its own [Human] ticket hand it to the person.
+        for current in (states.backlog, states.todo, states.awaiting):
+            ticket = _create_issue(project, workspace, current, None, "[Human] Approve the plan")
+            Issue.objects.filter(pk=ticket.pk).update(created_by_id=bot.id)
+
+            response = _patch_state(bot.client, workspace, project, ticket, states.in_review)
+
+            assert response.status_code == status.HTTP_403_FORBIDDEN, current.name
+            assert _state_of(ticket) == current.id
+
     def test_bot_patch_without_state_is_not_checked(self, workspace, project, states, create_user, bot):
         issue = _create_issue(project, workspace, states.review, create_user, "Bot task", [bot.id])
 
@@ -445,7 +471,7 @@ class TestBotCreatesHumanWorkItems:
             assert issue.state_id == states.awaiting.id, body
             assert not IssueAssignee.objects.filter(issue=issue).exists()
 
-    @pytest.mark.parametrize("initial", ["todo", "in_progress", "done", "cancelled", "review"])
+    @pytest.mark.parametrize("initial", ["todo", "in_progress", "in_review", "done", "cancelled", "review"])
     def test_other_initial_states_are_400(self, workspace, project, states, bot, initial):
         response = self._post(bot, workspace, project, state=str(getattr(states, initial).id))
 
