@@ -91,13 +91,17 @@ class TestProjectAPIPost(TestProjectBase):
 
         # Verify default states were created
         states = State.objects.filter(project=project)
-        assert states.count() == 6
-        expected_states = ["Backlog", "Todo", "In Progress", "Awaiting Human", "Done", "Cancelled"]
+        assert states.count() == 7
+        expected_states = ["Backlog", "Todo", "In Progress", "In Review", "Awaiting Human", "Done", "Cancelled"]
         state_names = list(states.values_list("name", flat=True))
         assert state_names == expected_states  # ordered by sequence
         awaiting_state = states.get(name="Awaiting Human")
         assert awaiting_state.group == "started"
         assert awaiting_state.default is False
+        in_review_state = states.get(name="In Review")
+        assert in_review_state.group == "started"
+        assert in_review_state.default is False
+        assert in_review_state.sequence == 40000
 
     @pytest.mark.django_db
     def test_create_project_with_project_lead(self, session_client, workspace, create_user):
