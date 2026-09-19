@@ -14,9 +14,11 @@ narrower set of rights (public ``/api/v1`` views only):
   top-level work items that are unassigned or assigned only to itself. A
   top-level ``[Human] ...`` ticket must be unassigned, so the bot never works
   on a human's decision. On unassigned work items it created, it may move the
-  state back to Todo (a state of the ``unstarted`` group), e.g. to ask a human
-  again. On work items it created (``created_by``, never ``external_source``)
-  that are not ``[Human]`` tickets and have no assignee but itself, it may
+  state (and nothing else) to Backlog, Todo (a state of the ``backlog`` or
+  ``unstarted`` group) or the project's Awaiting Human state, e.g. to hand a
+  ``[Human]`` gate to a person when its cycle starts. On work items it
+  created (``created_by``, never ``external_source``) that are not ``[Human]``
+  tickets and have no assignee but itself, it may
   update the planning fields (name, description, priority, estimate point,
   labels, dates, AI model, parent, state and assignees): assignees only to
   nobody or to itself alone, the parent only to nothing or to a work item it
@@ -27,7 +29,10 @@ narrower set of rights (public ``/api/v1`` views only):
   serializers with a 400): Backlog -> Todo or Awaiting Human, Todo -> In
   Progress, In Progress -> Awaiting Human or Done, Awaiting Human -> Todo, Done
   is final; a bot creates work items only in Backlog, Todo or Awaiting Human,
-  and never moves one to Cancelled or to a custom state.
+  and never moves one to Cancelled or to a custom state. An unassigned
+  ``[Human]`` ticket also goes Todo -> Awaiting Human, and a bot never moves
+  it out of Awaiting Human: it hands the ticket to a person and cannot take it
+  back.
 - Cycles: read, create, update the name, description and dates, add work
   items and transfer the open ones to another cycle; never delete or archive.
 - Modules: read, create, update the name, description, status and dates, and
@@ -52,11 +57,27 @@ narrower set of rights (public ``/api/v1`` views only):
 import uuid
 
 # Third Party imports
+from django.db.models import Q
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 # Module imports
-from plane.db.models import Estimate, Issue, IssueAssignee, IssueComment, IssueLink, Page, Project, State
+from plane.db.models import (
+    AWAITING_HUMAN_STATE_NAME,
+    Estimate,
+    Issue,
+    IssueAssignee,
+    IssueComment,
+    IssueLink,
+    Page,
+    Project,
+    State,
+)
 from plane.utils.members import is_issue_assigned_to_user, is_workspace_ai_agent
+from plane.utils.work_item_state_rules import (
+    CLOSED_STATE_GROUPS,
+    HUMAN_ITEM_PREFIX,  # noqa: F401 (kept importable from this module)
+    is_human_ticket_name,
+)
 
 from .project import ProjectBasePermission, ProjectEntityPermission, ProjectLitePermission, ProjectMemberPermission
 
@@ -85,11 +106,20 @@ def _requests_unassigned(data):
     return "assignees" in data and data.get("assignees") == []
 
 
-def _requests_todo_on_own_unassigned_item(request, view, issue_id):
-    """True for a ``PATCH`` that only sets ``state`` to a Todo state on an unassigned item the bot created.
+# State groups a bot may move its own unassigned work items to (Backlog and Todo), besides Awaiting Human.
+OWN_UNASSIGNED_ITEM_STATE_GROUPS = ("backlog", "unstarted")
 
-    Todo is any state of the ``unstarted`` group in the same project. This lets the orchestrator
-    reopen a ``[Human] ...`` ticket it created without giving it any other right on that ticket.
+
+def _requests_gate_state_on_own_unassigned_item(request, view, issue_id):
+    """True for a ``PATCH`` that only sets ``state`` to a gate state on an unassigned item the bot created.
+
+    A gate state is Backlog or Todo (any state of the ``backlog`` or ``unstarted`` group) or the
+    project's Awaiting Human state, all in the same project. Awaiting Human is matched by name (its
+    group, ``started``, also holds In Progress), and a state of the ``completed`` or ``cancelled``
+    group never matches, whatever its name is. This lets the planner and the orchestrator hand a
+    ``[Human] ...`` ticket they created to a person without giving them any other right on that
+    ticket (the bot never closes, starts or edits it); the work item state machine then decides
+    which of these moves is legal from the current state.
     """
     data = request.data
     if set(data.keys()) != {"state"}:
@@ -106,16 +136,16 @@ def _requests_todo_on_own_unassigned_item(request, view, issue_id):
     if IssueAssignee.objects.filter(issue_id=issue_id, deleted_at__isnull=True).exists():
         return False
     return State.objects.filter(
-        pk=state_id, project_id=project_id, workspace__slug=workspace_slug, group="unstarted"
+        Q(group__in=OWN_UNASSIGNED_ITEM_STATE_GROUPS)
+        | (Q(name__iexact=AWAITING_HUMAN_STATE_NAME) & ~Q(group__in=CLOSED_STATE_GROUPS)),
+        pk=state_id,
+        project_id=project_id,
+        workspace__slug=workspace_slug,
     ).exists()
 
 
-HUMAN_ITEM_PREFIX = "[Human]"
-
-
-def _is_human_ticket_name(name):
-    """True for a ``[Human] ...`` name (any case): a ticket that asks a person for a decision or an action."""
-    return str(name or "").strip().casefold().startswith(HUMAN_ITEM_PREFIX.casefold())
+# ``HUMAN_ITEM_PREFIX`` and the name check live with the state machine, which has its own ``[Human]`` table.
+_is_human_ticket_name = is_human_ticket_name
 
 
 def _requested_assignees(data):
@@ -221,7 +251,7 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
     """Project members keep full access.
 
     AI bots may read every work item, ``PATCH`` work items they are assigned to,
-    move unassigned work items they created back to a Todo state, and update the
+    move unassigned work items they created to Backlog, Todo or Awaiting Human, and update the
     planning fields of work items they created (see
     ``_requests_update_of_own_planned_item``). They may ``POST`` new work items
     either as children (``parent``) of work items they are assigned to, or as
@@ -250,7 +280,7 @@ class ProjectEntityOrAIBotWorkItemPermission(ProjectEntityPermission):
                 issue_id
                 and (
                     is_issue_assigned_to_user(issue_id, project_id, view.workspace_slug, request.user.id)
-                    or _requests_todo_on_own_unassigned_item(request, view, issue_id)
+                    or _requests_gate_state_on_own_unassigned_item(request, view, issue_id)
                     or _requests_update_of_own_planned_item(request, view, issue_id)
                 )
             )

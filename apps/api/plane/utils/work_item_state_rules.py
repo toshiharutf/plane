@@ -14,9 +14,22 @@ States are matched by name, case-insensitively::
 
 Moving a work item to the state it is already in is always allowed (a no-op).
 
+An unassigned work item whose name starts with ``[Human]`` (a ticket a bot wrote
+for a person) follows its own table when a bot moves it: the bot hands it to the
+person and never takes it back, starts it or closes it::
+
+    Backlog        -> Todo, Awaiting Human
+    Todo           -> Awaiting Human
+    In Progress    -> Awaiting Human
+    Awaiting Human -> (the person closes it)
+    Done           -> (final)
+
+On such a ticket a target state of the ``completed`` or ``cancelled`` group is
+refused whatever its name is.
+
 Who is checked:
 
-- A workspace ``AI_AGENT`` bot, on every work item: it may only use the table
+- A workspace ``AI_AGENT`` bot, on every work item: it may only use the tables
   above, and it may create work items only in Backlog, Todo or Awaiting Human.
 - Anybody else (people, in the web app or the API) only on a work item that has
   an AI_AGENT bot among its assignees (before or after the change). A person
@@ -54,6 +67,21 @@ STATE_TRANSITIONS = {
     AWAITING_HUMAN: frozenset({TODO}),
     DONE: frozenset(),
 }
+
+# The table of an unassigned ``[Human] ...`` ticket (see ``is_unassigned_human_ticket``): Todo -> Awaiting Human
+# exists only here, and nothing leads out of Awaiting Human. Keep in sync with the orchestrator's client too.
+HUMAN_TICKET_STATE_TRANSITIONS = {
+    BACKLOG: frozenset({TODO, AWAITING_HUMAN}),
+    TODO: frozenset({AWAITING_HUMAN}),
+    IN_PROGRESS: frozenset({AWAITING_HUMAN}),
+    AWAITING_HUMAN: frozenset(),
+    DONE: frozenset(),
+}
+
+# State groups that close a work item; on a ``[Human]`` ticket a bot never reaches them, whatever the state is named.
+CLOSED_STATE_GROUPS = (StateGroup.COMPLETED.value, StateGroup.CANCELLED.value)
+
+HUMAN_ITEM_PREFIX = "[Human]"
 
 # The states a bot may create a work item in.
 INITIAL_STATES = frozenset({BACKLOG, TODO, AWAITING_HUMAN})
@@ -127,11 +155,27 @@ def has_ai_bot_assignee(issue_id, extra_assignee_ids=()):
     return _is_ai_bot_id_list(extra_assignee_ids)
 
 
-def transition_error(current_state, target_state, for_bot=True):
+def is_human_ticket_name(name):
+    """True for a ``[Human] ...`` name (any case): a ticket that asks a person for a decision or an action."""
+    return str(name or "").strip().casefold().startswith(HUMAN_ITEM_PREFIX.casefold())
+
+
+def is_unassigned_human_ticket(issue, requested_assignee_ids=()):
+    """True for a ``[Human] ...`` work item that has no assignee and gets none in the same request."""
+    if issue is None or not is_human_ticket_name(issue.name):
+        return False
+    if [assignee_id for assignee_id in requested_assignee_ids or () if assignee_id]:
+        return False
+    return not IssueAssignee.objects.filter(issue_id=issue.pk, deleted_at__isnull=True).exists()
+
+
+def transition_error(current_state, target_state, for_bot=True, human_ticket=False):
     """``None`` when moving from ``current_state`` to ``target_state`` is allowed, else the error.
 
     ``for_bot`` applies the bot rules (only the table); otherwise the human exceptions apply
     (a ``cancelled`` group target, or a state outside the table on either side, is allowed).
+    ``human_ticket`` (bots only) applies the table of an unassigned ``[Human]`` ticket, where the
+    state names never match a state of the ``completed`` or ``cancelled`` group.
     """
     if target_state is None:
         return None
@@ -146,18 +190,26 @@ def transition_error(current_state, target_state, for_bot=True):
         if current not in STATE_TRANSITIONS or target not in STATE_TRANSITIONS:
             return None
 
+    human_ticket = bool(human_ticket and for_bot)
+    table = HUMAN_TICKET_STATE_TRANSITIONS if human_ticket else STATE_TRANSITIONS
     if current is None:
         # A work item without a state enters the workflow like a new one.
         allowed = INITIAL_STATES
     else:
-        allowed = STATE_TRANSITIONS.get(current, frozenset())
-    if target in allowed:
+        allowed = table.get(current, frozenset())
+    if target in allowed and not (human_ticket and target_state.group in CLOSED_STATE_GROUPS):
         return None
 
     allowed_names = _display(allowed)
     who = "An AI agent bot" if for_bot else "A work item assigned to an AI agent bot"
-    targets = ", ".join(allowed_names) if allowed_names else "none (final state)"
-    if for_bot:
+    none = "none (a person closes it)" if human_ticket and current == AWAITING_HUMAN else "none (final state)"
+    targets = ", ".join(allowed_names) if allowed_names else none
+    if human_ticket:
+        message = (
+            f"{who} cannot move an unassigned {HUMAN_ITEM_PREFIX} work item from {_name(current_state)} "
+            f"to {target_state.name}"
+        )
+    elif for_bot:
         message = f"{who} cannot move a work item from {_name(current_state)} to {target_state.name}"
     else:
         message = f"{who} cannot move from {_name(current_state)} to {target_state.name}"
@@ -175,7 +227,8 @@ def transition_error(current_state, target_state, for_bot=True):
 def check_state_change(actor, issue, target_state, requested_assignee_ids=()):
     """Raise ``WorkItemStateTransitionError`` when ``actor`` may not move ``issue`` to ``target_state``.
 
-    Bots follow the table on every work item. Other actors follow it (with the human
+    Bots follow the table on every work item, and the ``[Human]`` ticket table on an
+    unassigned ``[Human]`` work item. Other actors follow the table (with the human
     exceptions) only on work items that have an AI_AGENT bot among their current or
     requested assignees. ``actor`` ``None`` (a background task) is never checked.
     """
@@ -187,7 +240,8 @@ def check_state_change(actor, issue, target_state, requested_assignee_ids=()):
     if not for_bot and not has_ai_bot_assignee(issue.pk, requested_assignee_ids):
         return
     current_state = State.all_state_objects.filter(pk=issue.state_id).first() if issue.state_id else None
-    error = transition_error(current_state, target_state, for_bot=for_bot)
+    human_ticket = for_bot and is_unassigned_human_ticket(issue, requested_assignee_ids)
+    error = transition_error(current_state, target_state, for_bot=for_bot, human_ticket=human_ticket)
     if error is not None:
         raise error
 
