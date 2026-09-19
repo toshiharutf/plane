@@ -27,6 +27,15 @@
     "project_id": 1
   },
   {
+    "id": 8,
+    "name": "In Review",
+    "color": "#3E63DD",
+    "sequence": 40000,
+    "group": "started",
+    "default": false,
+    "project_id": 1
+  },
+  {
     "id": 7,
     "name": "Awaiting Human",
     "color": "#8E4EC6",

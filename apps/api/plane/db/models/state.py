@@ -21,6 +21,7 @@ class StateGroup(models.TextChoices):
 
 
 AWAITING_HUMAN_STATE_NAME = "Awaiting Human"
+IN_REVIEW_STATE_NAME = "In Review"
 
 # Default states
 DEFAULT_STATES = [
@@ -41,6 +42,13 @@ DEFAULT_STATES = [
         "name": "In Progress",
         "color": "#F59E0B",
         "sequence": 35000,
+        "group": StateGroup.STARTED.value,
+    },
+    {
+        # The work is finished and waits for its review and merge; Done means merged
+        "name": IN_REVIEW_STATE_NAME,
+        "color": "#3E63DD",
+        "sequence": 40000,
         "group": StateGroup.STARTED.value,
     },
     {

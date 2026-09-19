@@ -142,4 +142,4 @@ class TestErrorStateDefaults:
     def test_default_states_order(self):
         names = [state["name"] for state in sorted(DEFAULT_STATES, key=lambda state: state["sequence"])]
 
-        assert names == ["Backlog", "Todo", "In Progress", "Awaiting Human", "Done", "Cancelled", "Triage"]
+        assert names == ["Backlog", "Todo", "In Progress", "In Review", "Awaiting Human", "Done", "Cancelled", "Triage"]
