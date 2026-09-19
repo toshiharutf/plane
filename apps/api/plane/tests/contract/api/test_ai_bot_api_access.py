@@ -256,6 +256,12 @@ class TestAIBotWorkItemAccess:
             ticket.refresh_from_db()
             assert ticket.state_id == target.id
 
+        # AC2: the same ticket, now with the person, does not come back to Todo.
+        response = bot_client.patch(url(ticket), {"state": str(state.id)}, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
+        ticket.refresh_from_db()
+        assert ticket.state_id == awaiting.id
+
     def test_bot_cannot_take_its_human_item_back_out_of_awaiting_human(
         self, workspace, project, state, started_state, create_user, bot, monkeypatch
     ):
