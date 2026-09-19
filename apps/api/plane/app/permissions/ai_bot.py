@@ -25,9 +25,10 @@ narrower set of rights (public ``/api/v1`` views only):
   On top of these permissions, every state a bot sets follows the work item
   state machine (``plane.utils.work_item_state_rules``, enforced by the issue
   serializers with a 400): Backlog -> Todo or Awaiting Human, Todo -> In
-  Progress, In Progress -> Awaiting Human or Done, Awaiting Human -> Todo, Done
-  is final; a bot creates work items only in Backlog, Todo or Awaiting Human,
-  and never moves one to Cancelled or to a custom state.
+  Progress, In Progress -> In Review or Awaiting Human, In Review -> In
+  Progress, Awaiting Human or Done, Awaiting Human -> Todo, Done is final; a
+  bot creates work items only in Backlog, Todo or Awaiting Human, and never
+  moves one to Cancelled or to a custom state.
 - Cycles: read, create, update the name, description and dates, add work
   items and transfer the open ones to another cycle; never delete or archive.
 - Modules: read, create, update the name, description, status and dates, and
@@ -44,8 +45,9 @@ narrower set of rights (public ``/api/v1`` views only):
 - Relations: read and create between any work items.
 - AI usage: read everything, report usage only on work items it is assigned to.
 - Human requests: read everything, ask a question or an approval only on work
-  items it is assigned to that are in Backlog or In Progress; never answer one
-  (only human members answer; the answer moves the item to Todo).
+  items it is assigned to that are in Backlog, In Progress or In Review; never
+  answer one (only human members answer; the answer moves the item to Todo, or
+  back to In Review when it was asked there).
 - Pages: read public pages, create pages, update only pages it owns.
 """
 

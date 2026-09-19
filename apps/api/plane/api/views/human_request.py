@@ -105,8 +105,8 @@ class WorkItemHumanRequestListCreateAPIEndpoint(_WorkItemHumanRequestMixin, Base
         operation_id="create_work_item_human_request",
         summary="Ask a human",
         description=(
-            "Open a human request (kind approval or question) on a work item in Backlog or In Progress. "
-            "The work item state is remembered (state_before, for history) and the item moves to Awaiting "
+            "Open a human request (kind approval or question) on a work item in Backlog, In Progress or In "
+            "Review. The work item state is remembered (state_before) and the item moves to Awaiting "
             "Human until a human member answers. From any other state the request is refused with 400."
         ),
         tags=["Work Item Human Requests"],
@@ -176,7 +176,8 @@ class WorkItemHumanRequestAnswerAPIEndpoint(_WorkItemHumanRequestMixin, BaseAPIV
         description=(
             "Answer an open human request with a text. An approval answer must start with yes or accept "
             "(decision accept) or no or deny (decision deny); the rest is the note. The work item moves from "
-            "Awaiting Human to the project's Todo state and gets a comment with the answer. Bots are refused."
+            "Awaiting Human to the project's Todo state (back to In Review when the request was asked there) "
+            "and gets a comment with the answer. Bots are refused."
         ),
         tags=["Work Item Human Requests"],
         parameters=[WORKSPACE_SLUG_PARAMETER, PROJECT_ID_PARAMETER, ISSUE_ID_PARAMETER, HUMAN_REQUEST_ID_PARAMETER],

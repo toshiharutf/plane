@@ -478,10 +478,10 @@ class TestHumanRequestEdgeCases:
     @pytest.mark.parametrize(
         "name,group", [("Todo", "unstarted"), ("Done", "completed"), ("Cancelled", "cancelled"), ("Review", "started")]
     )
-    def test_asking_outside_backlog_or_in_progress_is_400(
+    def test_asking_outside_backlog_in_progress_or_in_review_is_400(
         self, workspace, project, states, create_user, bot, name, group
     ):
-        # Only Backlog and In Progress may move to Awaiting Human (the work item state machine).
+        # Only Backlog, In Progress and In Review may move to Awaiting Human (the work item state machine).
         current = State.objects.filter(project=project, name=name).first() or State.objects.create(
             name=name, group=group, sequence=60000, project=project, workspace=workspace
         )
@@ -493,7 +493,8 @@ class TestHumanRequestEdgeCases:
         assert name in response.data["error"]
         assert response.data["current_state"] == name
         assert response.data["requested_state"] == AWAITING_HUMAN_STATE_NAME
-        assert response.data["allowed_from_states"] == ["Backlog", "In Progress"]
+        assert response.data["allowed_from_states"] == ["Backlog", "In Progress", "In Review"]
+        assert "in Backlog, In Progress or In Review, not in" in response.data["error"]
         assert not HumanRequest.objects.filter(issue=issue).exists()
         issue.refresh_from_db()
         assert issue.state_id == current.id
@@ -584,3 +585,129 @@ class TestHumanRequestEdgeCases:
 
         assert response.status_code == status.HTTP_200_OK, response.data
         assert [row["issue_name"] for row in response.data] == ["Live"]
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestHumanRequestInReview:
+    """A blocked merge asks the owner on the item in review, and the answer resumes the review."""
+
+    @pytest.fixture
+    def in_review(self, workspace, project, states):
+        return State.objects.create(
+            name="In Review", group="started", sequence=38750, project=project, workspace=workspace
+        )
+
+    @pytest.fixture
+    def review_item(self, workspace, project, in_review, create_user, bot):
+        return _create_issue(project, workspace, in_review, create_user, "YGG-6", [bot.id])
+
+    def test_ac3_request_on_an_in_review_item_and_the_answer_moves_it_back(
+        self, workspace, project, states, in_review, review_item, bot, human_api
+    ):
+        response = _ask(bot, workspace, project, review_item, "question", "The merge conflicts in api.py: whose side?")
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert str(response.data["state_before"]) == str(in_review.id)
+        review_item.refresh_from_db()
+        assert review_item.state_id == states.awaiting.id
+
+        answer = human_api.post(
+            _answer_url(workspace.slug, project.id, review_item.id, response.data["id"]),
+            {"answer": "keep develop"},
+            format="json",
+        )
+
+        assert answer.status_code == status.HTTP_200_OK, answer.data
+        assert answer.data["decision"] == "answered"
+        review_item.refresh_from_db()
+        assert review_item.state_id == in_review.id
+        assert IssueComment.objects.get(issue=review_item).comment_stripped == "Answer: keep develop"
+
+    @pytest.mark.parametrize("text,decision", [("yes", "accept"), ("no, fix the tests first", "deny")])
+    def test_ac3_web_approval_answer_moves_the_item_back_to_in_review(
+        self, workspace, project, states, in_review, review_item, bot, human_web, text, decision
+    ):
+        request_id = _open_request(bot, workspace, project, review_item)
+
+        response = human_web.post(_web_url(workspace.slug, f"{request_id}/answer/"), {"answer": text}, format="json")
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        assert response.data["decision"] == decision
+        review_item.refresh_from_db()
+        assert review_item.state_id == in_review.id
+
+    def test_ac3_in_review_state_name_matches_case_insensitively(
+        self, workspace, project, states, in_review, review_item, bot, human_api
+    ):
+        State.objects.filter(pk=in_review.pk).update(name="in  REVIEW")
+        request_id = _open_request(bot, workspace, project, review_item)
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, review_item.id, request_id), {"answer": "yes"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        review_item.refresh_from_db()
+        assert review_item.state_id == in_review.id
+
+    def test_ac3_activity_records_the_move_back_to_in_review(
+        self, workspace, project, states, in_review, review_item, bot, human_api, monkeypatch
+    ):
+        calls = []
+        monkeypatch.setattr(human_request_module, "_dispatch_activity", lambda **kwargs: calls.append(kwargs))
+        request_id = _open_request(bot, workspace, project, review_item)
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, review_item.id, request_id), {"answer": "yes"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        moves = [call["requested_data"] for call in calls if call["type"] == "issue.activity.updated"]
+        assert moves == [f'{{"state_id": "{states.awaiting.id}"}}', f'{{"state_id": "{in_review.id}"}}']
+
+    @pytest.mark.parametrize("change", ["deleted", "renamed"])
+    def test_ac3_answer_falls_back_to_todo_when_the_in_review_state_is_gone(
+        self, workspace, project, states, in_review, review_item, bot, human_api, change
+    ):
+        request_id = _open_request(bot, workspace, project, review_item)
+        if change == "deleted":
+            State.all_state_objects.filter(pk=in_review.pk).update(deleted_at=timezone.now())
+        else:
+            State.objects.filter(pk=in_review.pk).update(name="Code Review")
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, review_item.id, request_id), {"answer": "yes"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        review_item.refresh_from_db()
+        assert review_item.state_id == states.todo.id
+
+    def test_ac3_answer_leaves_a_review_item_that_was_moved_elsewhere_in_place(
+        self, workspace, project, states, in_review, review_item, bot, human_api
+    ):
+        request_id = _open_request(bot, workspace, project, review_item)
+        Issue.objects.filter(pk=review_item.pk).update(state=states.in_progress)
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, review_item.id, request_id), {"answer": "yes"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        review_item.refresh_from_db()
+        assert review_item.state_id == states.in_progress.id
+
+    def test_ac3_requests_asked_outside_in_review_still_resume_in_todo(
+        self, workspace, project, states, in_review, bot, bot_item, human_api
+    ):
+        # The project has an In Review state, but the item was asked in In Progress: Todo as before.
+        request_id = _open_request(bot, workspace, project, bot_item)
+
+        response = human_api.post(
+            _answer_url(workspace.slug, project.id, bot_item.id, request_id), {"answer": "yes"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        bot_item.refresh_from_db()
+        assert bot_item.state_id == states.todo.id

@@ -6,13 +6,16 @@
 
 States are matched by name, case-insensitively::
 
-    Backlog        -> Todo, Awaiting Human        (initial state)
-    Todo           -> In Progress                 (set when the item's cycle starts)
-    In Progress    -> Awaiting Human, Done
-    Awaiting Human -> Todo                        (a human answered; the orchestrator picks it up again)
+    Backlog        -> Todo, Awaiting Human              (initial state)
+    Todo           -> In Progress                       (set when the item's cycle starts)
+    In Progress    -> In Review, Awaiting Human         (the work is finished into review, never into Done)
+    In Review      -> In Progress, Awaiting Human, Done (Done means merged; a blocked merge asks a human)
+    Awaiting Human -> Todo                              (a human answered; the orchestrator picks it up again)
     Done           -> (final)
 
 Moving a work item to the state it is already in is always allowed (a no-op).
+The answer of a human request asked in In Review moves the item back to In Review
+(``plane.utils.human_request``); that move is the server's own and is not in the table.
 
 Who is checked:
 
@@ -21,7 +24,7 @@ Who is checked:
 - Anybody else (people, in the web app or the API) only on a work item that has
   an AI_AGENT bot among its assignees (before or after the change). A person
   may still cancel such an item (any state of the ``cancelled`` group) and move
-  it from or to a state outside the five names (a custom state) freely.
+  it from or to a state outside the six names (a custom state) freely.
 
 Every violation is answered with HTTP 400 and a body
 ``{"error": ..., "current_state": ..., "requested_state": ..., "allowed_states": [...]}``.
@@ -43,6 +46,7 @@ from plane.utils.members import is_ai_agent_user
 BACKLOG = "backlog"
 TODO = "todo"
 IN_PROGRESS = "in progress"
+IN_REVIEW = "in review"
 AWAITING_HUMAN = "awaiting human"
 DONE = "done"
 
@@ -50,7 +54,8 @@ DONE = "done"
 STATE_TRANSITIONS = {
     BACKLOG: frozenset({TODO, AWAITING_HUMAN}),
     TODO: frozenset({IN_PROGRESS}),
-    IN_PROGRESS: frozenset({AWAITING_HUMAN, DONE}),
+    IN_PROGRESS: frozenset({IN_REVIEW, AWAITING_HUMAN}),
+    IN_REVIEW: frozenset({IN_PROGRESS, AWAITING_HUMAN, DONE}),
     AWAITING_HUMAN: frozenset({TODO}),
     DONE: frozenset(),
 }
@@ -62,11 +67,12 @@ STATE_DISPLAY_NAMES = {
     BACKLOG: "Backlog",
     TODO: "Todo",
     IN_PROGRESS: "In Progress",
+    IN_REVIEW: "In Review",
     AWAITING_HUMAN: "Awaiting Human",
     DONE: "Done",
 }
 # Display order of allowed targets in error messages.
-_ORDER = [BACKLOG, TODO, IN_PROGRESS, AWAITING_HUMAN, DONE]
+_ORDER = [BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, AWAITING_HUMAN, DONE]
 
 
 def state_key(name):

@@ -26,9 +26,10 @@ class HumanRequest(ProjectBaseModel):
     """A question or approval a bot asks a human about a work item, and the answer.
 
     A row with an empty ``decision`` is open. ``state_before`` is the work item
-    state before it moved to Awaiting Human, kept for history: once the request
-    is resolved (``resolved_by`` and ``resolved_at`` set) the item always moves
-    to the project's Todo state, not back to ``state_before``.
+    state before it moved to Awaiting Human: once the request is resolved
+    (``resolved_by`` and ``resolved_at`` set) the item moves to the project's
+    Todo state, not back to ``state_before``, unless that state is In Review
+    (a request asked during the review resumes the review).
     """
 
     issue = models.ForeignKey("db.Issue", on_delete=models.CASCADE, related_name="human_requests")

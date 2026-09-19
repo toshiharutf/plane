@@ -4,10 +4,11 @@
 
 """The work item state machine (``plane.utils.work_item_state_rules``).
 
-Backlog -> Todo | Awaiting Human; Todo -> In Progress; In Progress -> Awaiting Human | Done;
-Awaiting Human -> Todo; Done is final. AI_AGENT bots follow it on every work item and create
-work items only in Backlog, Todo or Awaiting Human. People follow it on work items assigned to
-a bot, except that they may cancel them and use custom states freely.
+Backlog -> Todo | Awaiting Human; Todo -> In Progress; In Progress -> In Review | Awaiting Human;
+In Review -> In Progress | Awaiting Human | Done; Awaiting Human -> Todo; Done is final (so Done
+means reviewed and merged). AI_AGENT bots follow it on every work item and create work items only
+in Backlog, Todo or Awaiting Human. People follow it on work items assigned to a bot, except that
+they may cancel them and use custom states freely.
 """
 
 from types import SimpleNamespace
@@ -17,7 +18,13 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from plane.db.models import Issue, IssueAssignee, Project, ProjectMember, State
-from plane.utils.work_item_state_rules import STATE_TRANSITIONS, state_key, transition_error
+from plane.utils.work_item_state_rules import (
+    IN_REVIEW,
+    STATE_DISPLAY_NAMES,
+    STATE_TRANSITIONS,
+    state_key,
+    transition_error,
+)
 
 
 def _v1(slug, project_id, suffix=""):
@@ -57,6 +64,7 @@ def states(db, workspace, project):
         backlog=create("Backlog", "backlog", 15000, default=True),
         todo=create("Todo", "unstarted", 25000),
         in_progress=create("In Progress", "started", 35000),
+        in_review=create("In Review", "started", 38750),
         awaiting=create("Awaiting Human", "started", 42500),
         done=create("Done", "completed", 45000),
         cancelled=create("Cancelled", "cancelled", 55000),
@@ -106,13 +114,40 @@ class TestStateTable:
         assert {key: set(value) for key, value in STATE_TRANSITIONS.items()} == {
             "backlog": {"todo", "awaiting human"},
             "todo": {"in progress"},
-            "in progress": {"awaiting human", "done"},
+            "in progress": {"in review", "awaiting human"},
+            "in review": {"in progress", "awaiting human", "done"},
             "awaiting human": {"todo"},
             "done": set(),
         }
 
     def test_state_names_compare_case_insensitively(self):
         assert state_key("  Awaiting   HUMAN ") == "awaiting human"
+        assert state_key("in  REVIEW") == IN_REVIEW
+
+    def test_ac2_in_progress_to_done_names_in_review_as_the_next_state(self):
+        in_progress = SimpleNamespace(id=1, name="In Progress", group="started")
+        in_review = SimpleNamespace(id=2, name="In Review", group="started")
+        done = SimpleNamespace(id=3, name="Done", group="completed")
+
+        for for_bot in (True, False):
+            error = transition_error(in_progress, done, for_bot=for_bot)
+
+            assert error.status_code == 400
+            assert "In Review" in error.message
+            assert error.detail["allowed_states"] == ["In Review", "Awaiting Human"]
+            assert transition_error(in_progress, in_review, for_bot=for_bot) is None
+            assert transition_error(in_review, done, for_bot=for_bot) is None
+
+    def test_ac2_in_review_is_listed_between_in_progress_and_awaiting_human(self):
+        assert STATE_DISPLAY_NAMES[IN_REVIEW] == "In Review"
+        assert list(STATE_DISPLAY_NAMES.values()) == [
+            "Backlog",
+            "Todo",
+            "In Progress",
+            "In Review",
+            "Awaiting Human",
+            "Done",
+        ]
 
     def test_error_names_both_states_and_the_allowed_targets(self):
         todo = SimpleNamespace(id=1, name="Todo", group="unstarted")
@@ -150,9 +185,13 @@ class TestBotTransitions:
             ("backlog", "awaiting"),
             ("todo", "in_progress"),
             ("in_progress", "awaiting"),
-            ("in_progress", "done"),
+            ("in_progress", "in_review"),
+            ("in_review", "done"),
+            ("in_review", "awaiting"),
+            ("in_review", "in_progress"),
             ("awaiting", "todo"),
             ("todo", "todo"),
+            ("in_review", "in_review"),
             ("done", "done"),
         ],
     )
@@ -172,12 +211,21 @@ class TestBotTransitions:
             ("todo", "done", ["In Progress"]),
             ("todo", "awaiting", ["In Progress"]),
             ("todo", "backlog", ["In Progress"]),
-            ("in_progress", "todo", ["Awaiting Human", "Done"]),
+            ("backlog", "in_review", ["Todo", "Awaiting Human"]),
+            ("todo", "in_review", ["In Progress"]),
+            ("in_progress", "todo", ["In Review", "Awaiting Human"]),
+            # AC2: a bot no longer closes its work; it finishes into In Review and the merge closes it.
+            ("in_progress", "done", ["In Review", "Awaiting Human"]),
+            ("in_review", "todo", ["In Progress", "Awaiting Human", "Done"]),
+            ("in_review", "backlog", ["In Progress", "Awaiting Human", "Done"]),
+            ("in_review", "cancelled", ["In Progress", "Awaiting Human", "Done"]),
             ("awaiting", "in_progress", ["Todo"]),
+            ("awaiting", "in_review", ["Todo"]),
             ("awaiting", "done", ["Todo"]),
             ("done", "todo", []),
-            ("in_progress", "cancelled", ["Awaiting Human", "Done"]),
-            ("in_progress", "review", ["Awaiting Human", "Done"]),
+            ("done", "in_review", []),
+            ("in_progress", "cancelled", ["In Review", "Awaiting Human"]),
+            ("in_progress", "review", ["In Review", "Awaiting Human"]),
             ("review", "done", []),
         ],
     )
@@ -201,6 +249,26 @@ class TestBotTransitions:
 
         assert _patch_state(bot.client, workspace, project, issue, states.in_progress).status_code == 200
         assert _patch_state(bot.client, workspace, project, issue, states.todo).status_code == 400
+
+    def test_ac2_bot_in_progress_to_done_is_400_naming_in_review(self, workspace, project, states, create_user, bot):
+        issue = _create_issue(project, workspace, states.in_progress, create_user, "Bot task", [bot.id])
+
+        response = _patch_state(bot.client, workspace, project, issue, states.done)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
+        assert "In Review" in response.data["error"]
+        assert response.data["allowed_states"][0] == "In Review"
+        assert _state_of(issue) == states.in_progress.id
+
+    def test_ac2_bot_walks_in_progress_in_review_done(self, workspace, project, states, create_user, bot):
+        State.objects.filter(pk=states.in_review.pk).update(name="in review")
+        issue = _create_issue(project, workspace, states.in_progress, create_user, "Bot task", [bot.id])
+
+        assert _patch_state(bot.client, workspace, project, issue, states.in_review).status_code == 200
+        assert _patch_state(bot.client, workspace, project, issue, states.done).status_code == 200
+        assert _state_of(issue) == states.done.id
+        # Done stays final.
+        assert _patch_state(bot.client, workspace, project, issue, states.in_review).status_code == 400
 
     def test_bot_patch_without_state_is_not_checked(self, workspace, project, states, create_user, bot):
         issue = _create_issue(project, workspace, states.review, create_user, "Bot task", [bot.id])
@@ -226,7 +294,7 @@ class TestBotCreatesWorkItems:
         assert response.status_code == status.HTTP_201_CREATED, response.data
         assert Issue.objects.get(pk=response.data["id"]).state_id == getattr(states, initial).id
 
-    @pytest.mark.parametrize("initial", ["in_progress", "done", "cancelled", "review"])
+    @pytest.mark.parametrize("initial", ["in_progress", "in_review", "done", "cancelled", "review"])
     def test_other_initial_states_are_400(self, workspace, project, states, bot, initial):
         response = bot.client.post(
             _v1(workspace.slug, project.id, "work-items/"),
@@ -285,7 +353,24 @@ class TestHumanTransitions:
         assert response.status_code == status.HTTP_200_OK, response.data
         assert _state_of(issue) == states.todo.id
 
-    @pytest.mark.parametrize("current", ["backlog", "todo", "in_progress", "awaiting", "done"])
+    def test_ac2_human_on_bot_item_closes_through_in_review(
+        self, workspace, project, states, create_user, bot, human_api
+    ):
+        issue = _create_issue(project, workspace, states.in_progress, create_user, "Bot task", [bot.id])
+
+        refused = _patch_state(human_api, workspace, project, issue, states.done)
+        assert refused.status_code == status.HTTP_400_BAD_REQUEST, refused.data
+        assert refused.data["allowed_states"] == ["In Review", "Awaiting Human"]
+        assert _state_of(issue) == states.in_progress.id
+
+        assert _patch_state(human_api, workspace, project, issue, states.in_review).status_code == 200
+        # A review that fails sends the item back to the developer.
+        assert _patch_state(human_api, workspace, project, issue, states.in_progress).status_code == 200
+        assert _patch_state(human_api, workspace, project, issue, states.in_review).status_code == 200
+        assert _patch_state(human_api, workspace, project, issue, states.done).status_code == 200
+        assert _state_of(issue) == states.done.id
+
+    @pytest.mark.parametrize("current", ["backlog", "todo", "in_progress", "in_review", "awaiting", "done"])
     def test_human_cancels_a_bot_item_from_any_state(
         self, workspace, project, states, create_user, bot, human_api, current
     ):
@@ -301,14 +386,14 @@ class TestHumanTransitions:
 
         assert _patch_state(human_api, workspace, project, issue, states.review).status_code == 200
         assert _patch_state(human_api, workspace, project, issue, states.done).status_code == 200
-        # Out of Cancelled (not one of the five names) is free too.
+        # Out of Cancelled (not one of the six names) is free too.
         assert _patch_state(human_api, workspace, project, issue, states.cancelled).status_code == 200
         assert _patch_state(human_api, workspace, project, issue, states.backlog).status_code == 200
 
     def test_human_on_item_without_bot_is_unrestricted(self, workspace, project, states, create_user, human_api):
         issue = _create_issue(project, workspace, states.backlog, create_user, "Human task", [str(create_user.id)])
 
-        for target in (states.done, states.todo, states.awaiting, states.in_progress, states.backlog):
+        for target in (states.done, states.todo, states.in_review, states.awaiting, states.in_progress, states.done):
             response = _patch_state(human_api, workspace, project, issue, target)
             assert response.status_code == status.HTTP_200_OK, (target.name, response.data)
             assert _state_of(issue) == target.id
@@ -371,6 +456,20 @@ class TestWebAppTransitions:
 
         cancelled = self._patch(human_web, workspace, project, issue, {"state_id": str(states.cancelled.id)})
         assert cancelled.status_code == status.HTTP_204_NO_CONTENT, cancelled.data
+
+    def test_ac2_web_patch_on_bot_item_closes_through_in_review(
+        self, workspace, project, states, create_user, bot, human_web
+    ):
+        issue = _create_issue(project, workspace, states.in_progress, create_user, "Bot task", [bot.id])
+
+        refused = self._patch(human_web, workspace, project, issue, {"state_id": str(states.done.id)})
+        assert refused.status_code == status.HTTP_400_BAD_REQUEST, refused.data
+        assert refused.data["allowed_states"] == ["In Review", "Awaiting Human"]
+
+        for target in (states.in_review, states.done):
+            moved = self._patch(human_web, workspace, project, issue, {"state_id": str(target.id)})
+            assert moved.status_code == status.HTTP_204_NO_CONTENT, moved.data
+            assert _state_of(issue) == target.id
 
     def test_web_patch_on_item_without_bot_is_unrestricted(self, workspace, project, states, create_user, human_web):
         issue = _create_issue(project, workspace, states.backlog, create_user, "Human task")
