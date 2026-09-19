@@ -1526,11 +1526,13 @@ class TestAIBotHumanItemsStayHumanOnly:
         # Form data follows the same rule.
         response = bot_client.patch(url(held_gate), {"state": str(done.id)}, format="multipart")
         assert response.status_code == status.HTTP_403_FORBIDDEN
-        # The bot still closes its ordinary work.
+        # The bot still closes its ordinary work: through In Review, since In Progress -> Done is no bot move.
         in_progress = State.objects.create(name="In Progress", group="started", project=project, workspace=workspace)
+        in_review = State.objects.create(name="In Review", group="started", project=project, workspace=workspace)
         task = _create_issue(project, workspace, in_progress, create_user, "Bot task", [bot_id])
-        response = bot_client.patch(url(task), {"state": str(done.id)}, format="json")
-        assert response.status_code == status.HTTP_200_OK, response.data
+        for target in (in_review, done):
+            response = bot_client.patch(url(task), {"state": str(target.id)}, format="json")
+            assert response.status_code == status.HTTP_200_OK, response.data
 
     def test_humans_still_assign_rename_and_close_human_items(
         self, workspace, project, state, awaiting_state, closing_states, create_user, bot, human_client, monkeypatch
