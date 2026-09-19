@@ -1095,6 +1095,123 @@ class TestAIBotPlannedWorkItemAccess:
         item.refresh_from_db()
         assert item.parent_id is None
 
+    def test_bot_creates_sub_items_under_its_own_unassigned_backlog_parent(
+        self, workspace, project, create_user, bot, monkeypatch
+    ):
+        """AC1: the planner writes sub items under its own unassigned future-cycle item."""
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        backlog = State.objects.create(name="Backlog", group="backlog", project=project, workspace=workspace)
+        parent = _create_issue_by(bot_id, project, workspace, backlog, "Add the state machine")
+        self_parent = _create_issue_by(bot_id, project, workspace, backlog, "Self assigned epic", [bot_id])
+        url = _v1(workspace.slug, project.id, "work-items/")
+
+        for owner, body in (
+            (parent, {"name": "[1] Add the state", "assignees": []}),
+            (parent, {"name": "[2] Wire the state", "assignees": [bot_id]}),
+            (parent, {"name": "[3] Default assignee"}),
+            (self_parent, {"name": "[1] Under a self-assigned epic", "assignees": []}),
+        ):
+            response = bot_client.post(url, {**body, "parent": str(owner.id), "state": str(backlog.id)}, format="json")
+            assert response.status_code == status.HTTP_201_CREATED, (body, response.data)
+            child = Issue.objects.get(pk=response.data["id"])
+            assert child.parent_id == owner.id
+            assignees = {str(a) for a in child.assignees.values_list("id", flat=True)}
+            assert assignees <= {bot_id}
+
+        child = Issue.objects.get(name="[1] Add the state")
+        assert not child.assignees.exists()
+
+    def test_bot_sub_items_under_its_own_parent_follow_the_top_level_rules(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        parent = _create_issue_by(bot_id, project, workspace, state, "Planned epic")
+        url = _v1(workspace.slug, project.id, "work-items/")
+
+        for body in (
+            {"name": "Rogue for a human", "assignees": [str(create_user.id)]},
+            {"name": "Rogue shared", "assignees": [bot_id, str(create_user.id)]},
+            {"name": "[Human] Rogue gate", "assignees": [bot_id]},
+        ):
+            response = bot_client.post(url, {**body, "parent": str(parent.id)}, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, body
+        assert not Issue.objects.filter(parent=parent).exists()
+
+        gate = bot_client.post(
+            url, {"name": "[Human] Approve it", "parent": str(parent.id), "assignees": []}, format="json"
+        )
+        assert gate.status_code == status.HTTP_201_CREATED, gate.data
+
+    def test_bot_cannot_create_sub_items_under_parents_it_neither_created_nor_holds(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        """AC2: a parent created by someone else and not assigned to the bot stays refused (403)."""
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        human_unassigned = _create_issue_by(create_user.id, project, workspace, state, "Human epic")
+        human_held = _create_issue_by(create_user.id, project, workspace, state, "Human held", [str(create_user.id)])
+        url = _v1(workspace.slug, project.id, "work-items/")
+
+        for parent in (human_unassigned, human_held):
+            for body in ({"name": "Rogue child", "assignees": []}, {"name": "Rogue child", "assignees": [bot_id]}):
+                response = bot_client.post(url, {**body, "parent": str(parent.id)}, format="json")
+                assert response.status_code == status.HTTP_403_FORBIDDEN, (parent.name, body)
+        assert not Issue.objects.filter(name="Rogue child").exists()
+
+    def test_create_and_patch_parent_rules_accept_the_same_parents(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        """AC3: ``POST`` with ``parent`` and ``PATCH`` of ``parent`` accept and refuse the same parents."""
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        human_id = str(create_user.id)
+        other_project = Project.objects.create(
+            name="Other Project", identifier="OTH", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        other_state = State.objects.create(name="Todo", group="unstarted", project=other_project, workspace=workspace)
+        parents = {
+            "own unassigned": (_create_issue_by(bot_id, project, workspace, state, "Own epic"), True),
+            "own self-assigned": (_create_issue_by(bot_id, project, workspace, state, "Own held", [bot_id]), True),
+            "human assigned to bot": (
+                _create_issue_by(human_id, project, workspace, state, "Human for bot", [bot_id]),
+                True,
+            ),
+            "shared with a human": (
+                _create_issue_by(human_id, project, workspace, state, "Shared", [bot_id, human_id]),
+                True,
+            ),
+            "own held by a human": (
+                _create_issue_by(bot_id, project, workspace, state, "Own for human", [human_id]),
+                False,
+            ),
+            "own [Human] ticket": (_create_issue_by(bot_id, project, workspace, state, "[Human] Decide"), False),
+            "human unassigned": (_create_issue_by(human_id, project, workspace, state, "Human epic"), False),
+            "own in another project": (
+                _create_issue_by(bot_id, other_project, workspace, other_state, "Elsewhere"),
+                False,
+            ),
+        }
+        item = _create_issue_by(bot_id, project, workspace, state, "Planned item")
+        item_url = _v1(workspace.slug, project.id, f"work-items/{item.id}/")
+
+        for label, (parent, allowed) in parents.items():
+            created = bot_client.post(
+                _v1(workspace.slug, project.id, "work-items/"),
+                {"name": f"Child of {label}", "parent": str(parent.id), "assignees": []},
+                format="json",
+            )
+            moved = bot_client.patch(item_url, {"parent": str(parent.id)}, format="json")
+            expected = status.HTTP_201_CREATED if allowed else status.HTTP_403_FORBIDDEN
+            assert created.status_code == expected, (label, created.data)
+            assert moved.status_code == (status.HTTP_200_OK if allowed else status.HTTP_403_FORBIDDEN), label
+            item.refresh_from_db()
+            if allowed:
+                assert item.parent_id == parent.id
+            else:
+                assert item.parent_id != parent.id
+
     def test_human_still_completes_and_assigns_bot_created_work_items(
         self, workspace, project, state, create_user, human_client, bot, monkeypatch
     ):
