@@ -10,6 +10,7 @@ from django.http import QueryDict
 from plane.app.permissions.ai_bot import (
     HUMAN_ITEM_PREFIX,
     OWN_ITEM_PATCH_FIELDS,
+    OWN_UNASSIGNED_ITEM_STATE_GROUPS,
     _is_human_ticket_name,
     _requested_assignees,
     _requests_only_self_assigned,
@@ -134,3 +135,17 @@ class TestRequestsUnassigned:
         assert _requests_unassigned({"assignees": [bot_id]}) is False
         assert _requests_unassigned(_form([("name", "Ticket")])) is False
         assert _requests_unassigned(_form([("assignees", bot_id)])) is False
+
+
+@pytest.mark.unit
+class TestOwnUnassignedItemStateGroups:
+    """Test which state groups a bot may move its own unassigned (``[Human]``) items to"""
+
+    def test_only_backlog_and_todo_groups(self):
+        # AC1: Backlog and Todo; Awaiting Human is matched by name, not by its ``started`` group.
+        assert set(OWN_UNASSIGNED_ITEM_STATE_GROUPS) == {"backlog", "unstarted"}
+
+    def test_closing_and_starting_groups_stay_refused(self):
+        # AC2: the bot never closes, cancels or starts such an item through this rule.
+        for group in ("started", "completed", "cancelled", "triage"):
+            assert group not in OWN_UNASSIGNED_ITEM_STATE_GROUPS

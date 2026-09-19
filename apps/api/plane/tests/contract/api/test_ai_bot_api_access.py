@@ -8,8 +8,8 @@ A bot authenticated with its API key can:
 
 - read every work item, comment, relation and activity in the workspace,
 - update only work items it is assigned to,
-- move unassigned work items it created back to a Todo state (nothing else on them;
-  the state machine only allows it from Awaiting Human),
+- hand unassigned ``[Human]`` work items it created to a person: Backlog -> Todo or Awaiting Human
+  and Todo -> Awaiting Human (nothing else on them, and never out of Awaiting Human),
 - create sub work items under work items it is assigned to,
 - create unassigned top-level work items that ask a human for an action,
 - comment on any work item and edit only its own comments,
@@ -39,6 +39,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from plane.db.models import (
+    AWAITING_HUMAN_STATE_NAME,
     Cycle,
     CycleIssue,
     Estimate,
@@ -228,32 +229,156 @@ class TestAIBotWorkItemAccess:
             )
             assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_bot_moves_its_own_unassigned_work_item_back_to_todo(
-        self, workspace, project, state, started_state, create_user, bot, monkeypatch
+    def test_bot_hands_its_own_unassigned_human_item_to_awaiting_human_from_backlog_and_todo(
+        self, workspace, project, state, create_user, bot, monkeypatch
     ):
+        # AC1: Backlog -> Awaiting Human, Backlog -> Todo and Todo -> Awaiting Human are accepted.
         _stub_tasks(monkeypatch)
         bot_id, bot_client = bot
-        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
-        cancelled = State.objects.create(name="Cancelled", group="cancelled", project=project, workspace=workspace)
+        backlog = State.objects.create(name="Backlog", group="backlog", project=project, workspace=workspace)
+        awaiting = State.objects.create(
+            name=AWAITING_HUMAN_STATE_NAME, group="started", project=project, workspace=workspace
+        )
         url = lambda issue: _v1(workspace.slug, project.id, f"work-items/{issue.id}/")  # noqa: E731
 
-        awaiting = State.objects.create(name="Awaiting Human", group="started", project=project, workspace=workspace)
-
-        ticket = _create_issue_by(bot_id, project, workspace, awaiting, "[Human] approve (Awaiting Human)")
-        response = bot_client.patch(url(ticket), {"state": str(state.id)}, format="json")
+        gate = _create_issue_by(bot_id, project, workspace, backlog, "[Human] Approve skill change: x (T27)")
+        response = bot_client.patch(url(gate), {"state": str(awaiting.id)}, format="json")
         assert response.status_code == status.HTTP_200_OK, response.data
+        gate.refresh_from_db()
+        assert gate.state_id == awaiting.id
+
+        ticket = _create_issue_by(
+            bot_id, project, workspace, backlog, "[Human] permission to push to git remote and deploy to vps"
+        )
+        for target in (state, awaiting):
+            response = bot_client.patch(url(ticket), {"state": str(target.id)}, format="json")
+            assert response.status_code == status.HTTP_200_OK, (target.name, response.data)
+            ticket.refresh_from_db()
+            assert ticket.state_id == target.id
+
+    def test_bot_cannot_take_its_human_item_back_out_of_awaiting_human(
+        self, workspace, project, state, started_state, create_user, bot, monkeypatch
+    ):
+        # AC2: once handed to a person, no bot move leads out of Awaiting Human.
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        backlog = State.objects.create(name="Backlog", group="backlog", project=project, workspace=workspace)
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        cancelled = State.objects.create(name="Cancelled", group="cancelled", project=project, workspace=workspace)
+        awaiting = State.objects.create(
+            name=AWAITING_HUMAN_STATE_NAME, group="started", project=project, workspace=workspace
+        )
+        ticket = _create_issue_by(
+            bot_id, project, workspace, awaiting, "[Human] permission to push to git remote and deploy to vps"
+        )
+        url = _v1(workspace.slug, project.id, f"work-items/{ticket.id}/")
+
+        for target in (state, backlog):
+            response = bot_client.patch(url, {"state": str(target.id)}, format="json")
+            assert response.status_code == status.HTTP_400_BAD_REQUEST, (target.name, response.data)
+            assert response.data["current_state"] == AWAITING_HUMAN_STATE_NAME
+            assert response.data["allowed_states"] == []
+        for target in (started_state, done, cancelled):
+            response = bot_client.patch(url, {"state": str(target.id)}, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, target.name
+        ticket.refresh_from_db()
+        assert ticket.state_id == awaiting.id
+
+    def test_bot_gate_move_refuses_other_states_fields_assignees_and_creators(
+        self, workspace, project, state, started_state, create_user, bot, monkeypatch
+    ):
+        # AC2: only a bare {state} to a gate state, on the bot's own unassigned item; never In Progress,
+        # the completed group or the cancelled group, from any state.
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        backlog = State.objects.create(name="Backlog", group="backlog", project=project, workspace=workspace)
+        done = State.objects.create(name="Done", group="completed", project=project, workspace=workspace)
+        cancelled = State.objects.create(name="Cancelled", group="cancelled", project=project, workspace=workspace)
+        review = State.objects.create(name="Review", group="started", project=project, workspace=workspace)
+        awaiting = State.objects.create(
+            name=AWAITING_HUMAN_STATE_NAME, group="started", project=project, workspace=workspace
+        )
+        other_project = Project.objects.create(
+            name="Other Project", identifier="OTH", workspace=workspace, created_by=create_user, updated_by=create_user
+        )
+        other_awaiting = State.objects.create(
+            name=AWAITING_HUMAN_STATE_NAME, group="started", project=other_project, workspace=workspace
+        )
+        url = lambda issue: _v1(workspace.slug, project.id, f"work-items/{issue.id}/")  # noqa: E731
+
+        for current in (backlog, state):
+            ticket = _create_issue_by(bot_id, project, workspace, current, f"[Human] Approve ({current.name})")
+            for body in (
+                {"state": str(done.id)},
+                {"state": str(cancelled.id)},
+                {"state": str(started_state.id)},
+                {"state": str(review.id)},
+                {"state": str(other_awaiting.id)},
+                {"state": str(awaiting.id), "name": "x"},
+                {"state": str(awaiting.id), "assignees": [bot_id]},
+            ):
+                response = bot_client.patch(url(ticket), body, format="json")
+                assert response.status_code == status.HTTP_403_FORBIDDEN, (current.name, body)
+            ticket.refresh_from_db()
+            assert ticket.state_id == current.id
+            assert ticket.name == f"[Human] Approve ({current.name})"
+
+        own_ticket = _create_issue_by(bot_id, project, workspace, state, "[Human] approve")
+        assigned = _create_issue_by(bot_id, project, workspace, state, "[Human] assigned", [str(create_user.id)])
+        human_created = _create_issue_by(create_user.id, project, workspace, state, "[Human] by a person")
+        for issue in (assigned, human_created):
+            response = bot_client.patch(url(issue), {"state": str(awaiting.id)}, format="json")
+            assert response.status_code == status.HTTP_403_FORBIDDEN, issue.name
+            issue.refresh_from_db()
+            assert issue.state_id == state.id
+        # The same move on the bot's own unassigned item is accepted.
+        response = bot_client.patch(url(own_ticket), {"state": str(awaiting.id)}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+
+    def test_bot_gate_move_matches_awaiting_human_by_exact_name_in_any_case(
+        self, workspace, project, state, create_user, bot, monkeypatch
+    ):
+        # AC1 and AC2: the Awaiting Human state is found by its name (any case, as for human requests);
+        # another started state with a similar name is still refused.
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        lower_awaiting = State.objects.create(
+            name=AWAITING_HUMAN_STATE_NAME.lower(), group="started", project=project, workspace=workspace
+        )
+        look_alike = State.objects.create(
+            name=f"{AWAITING_HUMAN_STATE_NAME} review", group="started", project=project, workspace=workspace
+        )
+        ticket = _create_issue_by(bot_id, project, workspace, state, "[Human] Approve skill change: x (T27)")
+        url = _v1(workspace.slug, project.id, f"work-items/{ticket.id}/")
+
+        response = bot_client.patch(url, {"state": str(look_alike.id)}, format="json")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        response = bot_client.patch(url, {"state": str(lower_awaiting.id)}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.data
+        ticket.refresh_from_db()
+        assert ticket.state_id == lower_awaiting.id
+
+    @pytest.mark.parametrize("group", ["completed", "cancelled"])
+    def test_bot_gate_move_ignores_an_awaiting_human_name_on_a_closing_state(
+        self, workspace, project, state, create_user, bot, monkeypatch, group
+    ):
+        # AC4: a state named Awaiting Human that closes the item (completed or cancelled group) is no gate state.
+        _stub_tasks(monkeypatch)
+        bot_id, bot_client = bot
+        closing = State.objects.create(
+            name=AWAITING_HUMAN_STATE_NAME, group=group, project=project, workspace=workspace
+        )
+        ticket = _create_issue_by(bot_id, project, workspace, state, "[Human] Approve skill change: x (T27)")
+
+        response = bot_client.patch(
+            _v1(workspace.slug, project.id, f"work-items/{ticket.id}/"), {"state": str(closing.id)}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN, response.data
         ticket.refresh_from_db()
         assert ticket.state_id == state.id
 
-        # The state machine only lets a bot move Awaiting Human back to Todo.
-        for current in (done, cancelled, started_state):
-            ticket = _create_issue_by(bot_id, project, workspace, current, f"[Human] approve ({current.name})")
-            response = bot_client.patch(url(ticket), {"state": str(state.id)}, format="json")
-            assert response.status_code == status.HTTP_400_BAD_REQUEST, response.data
-            ticket.refresh_from_db()
-            assert ticket.state_id == current.id
-
-    def test_bot_reopen_right_is_limited_to_todo_on_its_own_unassigned_work_items(
+    def test_bot_reopen_right_is_limited_to_gate_states_on_its_own_unassigned_work_items(
         self, workspace, project, state, started_state, create_user, bot, monkeypatch
     ):
         _stub_tasks(monkeypatch)
@@ -266,12 +391,15 @@ class TestAIBotWorkItemAccess:
         # Other target states or other fields are refused.
         for body in (
             {"state": str(started_state.id)},
-            {"state": str(backlog.id)},
             {"state": str(state.id), "name": "Approved by the bot"},
             {"name": "Approved by the bot"},
         ):
             response = bot_client.patch(url(ticket), body, format="json")
             assert response.status_code == status.HTTP_403_FORBIDDEN, body
+        # A gate state passes the permission, but Done is final in the state machine.
+        for target in (backlog, state):
+            response = bot_client.patch(url(ticket), {"state": str(target.id)}, format="json")
+            assert response.status_code == status.HTTP_400_BAD_REQUEST, (target.name, response.data)
         ticket.refresh_from_db()
         assert ticket.state_id == done.id
 
@@ -301,25 +429,25 @@ class TestAIBotWorkItemAccess:
         ticket.refresh_from_db()
         assert ticket.state_id == done.id
 
-    def test_bot_reopens_its_ticket_once_the_human_assignee_was_removed(
+    def test_bot_hands_over_its_ticket_once_the_human_assignee_was_removed(
         self, workspace, project, state, create_user, bot, monkeypatch
     ):
         _stub_tasks(monkeypatch)
         bot_id, bot_client = bot
         awaiting = State.objects.create(name="Awaiting Human", group="started", project=project, workspace=workspace)
-        ticket = _create_issue_by(bot_id, project, workspace, awaiting, "[Human] approve", [str(create_user.id)])
+        ticket = _create_issue_by(bot_id, project, workspace, state, "[Human] approve", [str(create_user.id)])
         url = _v1(workspace.slug, project.id, f"work-items/{ticket.id}/")
 
-        response = bot_client.patch(url, {"state": str(state.id)}, format="json")
+        response = bot_client.patch(url, {"state": str(awaiting.id)}, format="json")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
         # Unassigning soft deletes the assignee row; the ticket counts as unassigned again.
         IssueAssignee.objects.filter(issue=ticket).delete()
         assert IssueAssignee.all_objects.filter(issue=ticket, deleted_at__isnull=False).exists()
-        response = bot_client.patch(url, {"state": str(state.id)}, format="json")
+        response = bot_client.patch(url, {"state": str(awaiting.id)}, format="json")
         assert response.status_code == status.HTTP_200_OK, response.data
         ticket.refresh_from_db()
-        assert ticket.state_id == state.id
+        assert ticket.state_id == awaiting.id
 
     def test_bot_cannot_move_its_assigned_work_item_to_a_custom_state(
         self, workspace, project, state, create_user, bot, monkeypatch
