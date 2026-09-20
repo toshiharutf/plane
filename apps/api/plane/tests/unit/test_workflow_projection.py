@@ -15,6 +15,16 @@ from plane.workflow.service import digest
 pytestmark = pytest.mark.django_db
 
 
+def test_workflow_assignment_projection_preserves_task_acceptance(workflow):
+    work = make_work(workflow, name="Implement a scoped task")
+    description = "<p>Accept only nonblank titles and preserve descriptions after restart.</p>"
+    work.issue.description_html = description
+    work.issue.save(update_fields=["description_html"])
+    projected = records(workflow.project.id, workflow.user)["work"]
+    assigned = next(item for item in projected if item["issue_id"] == str(work.issue_id))
+    assert assigned["description_html"] == description
+
+
 def approved_scope(f, work, cycle=None, revision=1):
     definition = {"work": [{"id": str(item.issue_id), "revision": revision} for item in work], "targets": []}
     result = perform(

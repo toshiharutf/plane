@@ -50,6 +50,7 @@ def record(project, actor, kind, row):
     data["allowed_actions"] = allowed(project, actor, kind, row)
     if kind == "work":
         data["name"] = row.issue.name
+        data["description_html"] = row.issue.description_html
         data["human_wait_minutes"] = human_wait_minutes(row)
         from .budget import admission
 
