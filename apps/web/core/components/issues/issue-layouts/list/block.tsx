@@ -1,3 +1,4 @@
+import { WorkRoutingBadge } from "@/components/issues/workflow-work-panel";
 /**
  * Copyright (c) 2023-present Plane Software, Inc. and contributors
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -279,6 +280,9 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             >
               <p className="cursor-pointer truncate text-body-xs-medium text-primary">{issue.name}</p>
             </Tooltip>
+            <WorkRoutingBadge
+              work={issue as typeof issue & { workflow_v2?: { next_action?: string; state?: string } }}
+            />
           </div>
           {!issue?.tempId && (
             <div

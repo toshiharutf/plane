@@ -48,6 +48,7 @@ class WorkItemAIUsageSerializer(BaseSerializer):
             "usage_weekly_pct",
             "api_cost_usd",
             "price_version",
+            "cost_breakdown",
             "split_unknown",
             "session_id",
             "external_source",
@@ -65,6 +66,7 @@ class WorkItemAIUsageSerializer(BaseSerializer):
             "workspace",
             "api_cost_usd",
             "price_version",
+            "cost_breakdown",
             "split_unknown",
             "created_by",
             "updated_by",
@@ -120,6 +122,7 @@ class AIUsageHistorySerializer(BaseSerializer):
             "usage_weekly_pct",
             "api_cost_usd",
             "price_version",
+            "cost_breakdown",
             "split_unknown",
             "created_at",
         ]

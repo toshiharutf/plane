@@ -10,6 +10,7 @@ from django.db import IntegrityError
 
 # Third Party imports
 from rest_framework import serializers
+from plane.workflow.serializer import WorkContinuationField
 
 # Module imports
 from .base import BaseSerializer, DynamicBaseSerializer
@@ -783,6 +784,7 @@ class IssueIntakeSerializer(DynamicBaseSerializer):
 
 
 class IssueSerializer(DynamicBaseSerializer):
+    workflow_v2 = WorkContinuationField()
     # ids
     cycle_id = serializers.PrimaryKeyRelatedField(read_only=True)
     module_ids = serializers.ListField(child=serializers.UUIDField(), required=False)
@@ -799,6 +801,7 @@ class IssueSerializer(DynamicBaseSerializer):
     class Meta:
         model = Issue
         fields = [
+            "workflow_v2",
             "id",
             "name",
             "state_id",
@@ -840,6 +843,8 @@ class IssueSerializer(DynamicBaseSerializer):
 
 
 class IssueListDetailSerializer(serializers.Serializer):
+    workflow_v2 = WorkContinuationField()
+
     def __init__(self, *args, **kwargs):
         # Extract expand parameter and store it as instance variable
         self.expand = kwargs.pop("expand", []) or []
@@ -888,6 +893,10 @@ class IssueListDetailSerializer(serializers.Serializer):
             "attachment_count": instance.attachment_count,
             "link_count": instance.link_count,
         }
+
+        workflow_field = WorkContinuationField()
+        workflow_field.bind("workflow_v2", self)
+        data["workflow_v2"] = workflow_field.to_representation(instance)
 
         # Handle expanded fields only when requested - using direct field access
         if self.expand:

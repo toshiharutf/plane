@@ -1,3 +1,4 @@
+import { WorkflowWorkPanel } from "../workflow-work-panel";
 // oxlint-disable no-shadow
 /**
  * Copyright (c) 2023-present Plane Software, Inc. and contributors
@@ -80,6 +81,7 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
     <>
       <div className="space-y-4 rounded-lg">
         {!isArchived && <HumanRequestBanner workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />}
+        <WorkflowWorkPanel workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
 
         {issue.parent_id && (
           <IssueParentDetail

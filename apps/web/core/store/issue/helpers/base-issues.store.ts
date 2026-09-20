@@ -597,6 +597,11 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
       // If errored out update store again to revert the change
       this.rootIssueStore.issues.updateIssue(issueId, issueBeforeUpdate ?? {});
       this.updateIssueList(issueBeforeUpdate, { ...issueBeforeUpdate, ...data } as TIssue);
+      // Restore counters as well as the card when a guarded transition is refused.
+      if (shouldSync) {
+        this.updateParentStats({ ...issueBeforeUpdate, ...data } as TIssue, issueBeforeUpdate);
+        void this.fetchParentStats(workspaceSlug, projectId);
+      }
       throw error;
     }
   }

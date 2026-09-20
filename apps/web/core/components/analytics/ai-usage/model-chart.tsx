@@ -4,6 +4,16 @@
  * See the LICENSE file for details.
  */
 
+import {
+  Bar,
+  BarChart as CostBarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { useMemo } from "react";
 import { useTheme } from "next-themes";
 // plane imports
@@ -15,6 +25,14 @@ import type { TAIUsageModel, TBarItem } from "@plane/types";
 import AnalyticsSectionWrapper from "../analytics-section-wrapper";
 import type { TAIUsageChartDatum, TAIUsageMetricKey } from "./utils";
 import { AI_USAGE_METRICS, buildAIUsageChartData, formatTokenCount } from "./utils";
+
+const COST_CATEGORIES = [
+  { key: "input", label: "Input", color: "#6366f1" },
+  { key: "output", label: "Output", color: "#059669" },
+  { key: "cache_write_5m", label: "Cache write (5m)", color: "#ca8a04" },
+  { key: "cache_write_1h", label: "Cache write (1h)", color: "#db2777" },
+  { key: "cache_read", label: "Cache read", color: "#0891b2" },
+] as const;
 
 type TickProps = { x: number; y: number; payload: { value: number | string } };
 
@@ -104,6 +122,128 @@ export function AIUsageModelChart({ usage }: Props) {
         </span>
       }
     >
+      <section className="mb-6" aria-label={`${usage.model} cost and active duration`}>
+        <h3 className="mb-2 text-16 font-medium">Actual cost (USD)</h3>
+        <p className="mb-3 text-13 text-tertiary">
+          Cost uses recorded prices. Unknown prices are gaps, never zero. Active time excludes human waiting.
+        </p>
+        <div
+          className="h-56"
+          role="figure"
+          aria-label="Actual USD cost by completed work item; missing prices are unknown"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <CostBarChart
+              data={usage.work_items.map((item) => ({
+                name: `${item.project_identifier}-${item.sequence_id}`,
+                cost: item.api_cost_usd == null ? null : Number(item.api_cost_usd),
+              }))}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip formatter={(value) => [`$${Number(value).toFixed(4)}`, "Actual USD"]} />
+              <Bar dataKey="cost" name="Actual USD" fill="#6366f1" />
+            </CostBarChart>
+          </ResponsiveContainer>
+        </div>
+        <details className="mt-4 text-13">
+          <summary className="cursor-pointer">Recorded USD by input, output and cache category</summary>
+          <p className="my-3 text-tertiary">
+            Historic runs without a stored price breakdown remain unknown. Category bars use recorded costs and do not
+            reprice tokens.
+          </p>
+          <div
+            className="h-64"
+            role="figure"
+            aria-label="Recorded cost categories in USD by work item; unknown breakdowns have no bars"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <CostBarChart
+                data={usage.work_items.map((item) => ({
+                  name: `${item.project_identifier}-${item.sequence_id}`,
+                  ...Object.fromEntries(
+                    COST_CATEGORIES.map(({ key }) => [
+                      key,
+                      item.cost_categories_usd?.[key] == null ? null : Number(item.cost_categories_usd[key]),
+                    ])
+                  ),
+                }))}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip formatter={(value) => `$${Number(value).toFixed(6)}`} />
+                <Legend />
+                {COST_CATEGORIES.map(({ key, label, color }) => (
+                  <Bar key={key} dataKey={key} name={label} stackId="recorded-usd" fill={color} />
+                ))}
+              </CostBarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr>
+                  <th>Work item</th>
+                  {COST_CATEGORIES.map(({ label }) => (
+                    <th key={label}>{label} USD</th>
+                  ))}
+                  <th>Runs missing breakdown</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.work_items.map((item) => (
+                  <tr key={item.id} className="border-t border-subtle">
+                    <th className="font-normal py-2">
+                      {item.project_identifier}-{item.sequence_id}
+                    </th>
+                    {COST_CATEGORIES.map(({ key }) => (
+                      <td key={key}>
+                        {item.cost_categories_usd?.[key] == null
+                          ? "Unknown"
+                          : `$${Number(item.cost_categories_usd[key]).toFixed(6)}`}
+                      </td>
+                    ))}
+                    <td>{item.unknown_category_count ?? "Unknown"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <details className="mt-3 text-13">
+          <summary className="cursor-pointer">Cost, known subtotal and active minutes</summary>
+          <div className="overflow-x-auto">
+            <table className="mt-2 w-full text-left">
+              <thead>
+                <tr>
+                  <th>Work item</th>
+                  <th>Actual USD</th>
+                  <th>Known subtotal USD</th>
+                  <th>Unpriced runs</th>
+                  <th>Active minutes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.work_items.map((item) => (
+                  <tr className="border-t border-subtle" key={item.id}>
+                    <th className="font-normal py-2">
+                      {item.project_identifier}-{item.sequence_id}
+                    </th>
+                    <td>{item.api_cost_usd == null ? "Unknown" : `$${Number(item.api_cost_usd).toFixed(4)}`}</td>
+                    <td>
+                      {item.known_api_cost_usd == null ? "Unknown" : `$${Number(item.known_api_cost_usd).toFixed(4)}`}
+                    </td>
+                    <td>{item.unknown_cost_count ?? "Unknown"}</td>
+                    <td>{item.duration_seconds == null ? "Unknown" : (item.duration_seconds / 60).toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
       <BarChart
         className="h-[370px] w-full"
         data={data}

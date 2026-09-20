@@ -45,3 +45,6 @@ urlpatterns = [
     *timezone_urls,
     *exporter_urls,
 ]
+
+from plane.workflow.urls import routes as workflow_routes
+urlpatterns += workflow_routes()

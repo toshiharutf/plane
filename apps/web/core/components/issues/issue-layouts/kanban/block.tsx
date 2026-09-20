@@ -1,3 +1,4 @@
+import { WorkRoutingBadge } from "@/components/issues/workflow-work-panel";
 /**
  * Copyright (c) 2023-present Plane Software, Inc. and contributors
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -123,6 +124,7 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(props:
       <Tooltip tooltipContent={issue.name} isMobile={isMobile} renderByDefault={false}>
         <div className="line-clamp-1 w-full text-body-sm-medium text-primary">
           <span>{issue.name}</span>
+          <WorkRoutingBadge work={issue as typeof issue & { workflow_v2?: { next_action?: string; state?: string } }} />
         </div>
       </Tooltip>
 

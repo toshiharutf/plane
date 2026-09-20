@@ -108,6 +108,9 @@ class WorkItemAIUsageListCreateAPIEndpoint(BaseAPIView):
 
         usages = []
         with transaction.atomic():
+            # Lock a row that exists even for the first report. Locking an empty
+            # usage queryset alone cannot serialize two concurrent initial deliveries.
+            Issue.objects.select_for_update().get(pk=issue.pk)
             for serializer in serializers:
                 data = dict(serializer.validated_data)
                 session_id = data.get("session_id", "")
@@ -120,6 +123,32 @@ class WorkItemAIUsageListCreateAPIEndpoint(BaseAPIView):
                     )
                 if instance is None:
                     instance = AIUsageRecord(issue=issue, project_id=project_id)
+                else:
+                    counters = ("input_tokens", "output_tokens", "cache_read_tokens", "duration_seconds")
+                    stale = [
+                        field
+                        for field in counters
+                        if field in data
+                        and getattr(instance, field) is not None
+                        and (data[field] is None or data[field] < getattr(instance, field))
+                    ]
+                    old_writes = instance.cache_write_5m_tokens + instance.cache_write_1h_tokens
+                    new_writes = sum(
+                        data.get(field, getattr(instance, field))
+                        for field in ("cache_write_5m_tokens", "cache_write_1h_tokens")
+                    )
+                    if new_writes < old_writes:
+                        stale.append("cache_write_tokens")
+                    if stale:
+                        transaction.set_rollback(True)
+                        return Response(
+                            {
+                                "error": "stale_usage_report",
+                                "fields": stale,
+                                "detail": "Cumulative usage cannot decrease; retry with the latest session totals.",
+                            },
+                            status=status.HTTP_409_CONFLICT,
+                        )
                 for field, value in data.items():
                     setattr(instance, field, value)
                 instance.save()
@@ -190,6 +219,8 @@ class AIUsageHistoryAPIEndpoint(BaseAPIView):
             queryset = queryset.filter(created_at__date__gte=date_from)
         if date_to:
             queryset = queryset.filter(created_at__date__lte=date_to)
+        if request.GET.get("measured", "").lower() in {"1", "true"}:
+            queryset = queryset.filter(duration_seconds__gt=0, api_cost_usd__isnull=False)
 
         return self.paginate(
             request=request,

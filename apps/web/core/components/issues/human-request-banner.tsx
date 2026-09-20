@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { useSWRConfig } from "swr";
 import { observer } from "mobx-react";
 import useSWR from "swr";
 import { useTranslation } from "@plane/i18n";
@@ -32,6 +33,7 @@ export const HumanRequestBanner = observer(function HumanRequestBanner(props: Pr
   const [isSending, setIsSending] = useState(false);
   // hooks
   const { t } = useTranslation();
+  const { mutate: mutateCache } = useSWRConfig();
   const {
     issue: { getIssueById },
     fetchIssue,
@@ -56,6 +58,8 @@ export const HumanRequestBanner = observer(function HumanRequestBanner(props: Pr
       await humanRequestService.answer(workspaceSlug, humanRequest.id, answer);
       setAnswer("");
       await mutate((requests) => requests?.filter((request) => request.id !== humanRequest.id), { revalidate: false });
+      // Refresh routing as well as state: a review answer must resume the reviewer.
+      await mutateCache(["workflow-v2", workspaceSlug, projectId]);
       // The answer moves the item from Awaiting Human to Todo.
       await fetchIssue(workspaceSlug, projectId, issueId).catch(() => undefined);
     } catch (error) {

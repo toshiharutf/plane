@@ -43,7 +43,16 @@ def issue(db, workspace, project, state, create_user):
 def test_ai_model_values_cover_claude_and_openai():
     assert AI_MODEL_VALUES[0] == AI_MODEL_NONE == "None"
     assert len(AI_MODEL_VALUES) == len(set(AI_MODEL_VALUES))
-    for value in ("opus-high", "fable-xhigh", "sonnet-medium", "haiku", "gpt-5.5-xhigh", "gpt-5.6-terra-ultra"):
+    for value in (
+        "opus-high",
+        "fable-xhigh",
+        "sonnet-medium",
+        "haiku",
+        "gpt-6-astra-high",
+        "gpt-5.6-sol-high",
+        "gpt-5.5-xhigh",
+        "gpt-5.6-terra-ultra",
+    ):
         assert value in AI_MODEL_VALUES
 
 
@@ -56,7 +65,16 @@ def test_ai_model_field_matches_the_value_list():
     assert max(len(value) for value in AI_MODEL_VALUES) <= field.max_length
     # "haiku" has no effort levels, every other model always carries one
     assert "haiku" in AI_MODEL_VALUES
-    assert not {"fable", "opus", "sonnet", "gpt-5.5", "gpt-5.6-terra", "gpt-5.6-luna"} & set(AI_MODEL_VALUES)
+    assert not {
+        "fable",
+        "opus",
+        "sonnet",
+        "gpt-6-astra",
+        "gpt-5.6-sol",
+        "gpt-5.5",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+    } & set(AI_MODEL_VALUES)
 
 
 @pytest.mark.unit

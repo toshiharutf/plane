@@ -33,3 +33,6 @@ urlpatterns = [
     *sticky_patterns,
     *page_patterns,
 ]
+
+from plane.workflow.urls import routes as workflow_routes
+urlpatterns += workflow_routes(public=True)

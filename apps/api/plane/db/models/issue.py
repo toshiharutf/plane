@@ -21,7 +21,8 @@ from django import apps
 # Module imports
 from plane.utils.html_processor import strip_tags
 from plane.utils.path_validator import sanitize_filename
-from plane.db.mixins import SoftDeletionManager, ChangeTrackerMixin
+from plane.db.mixins import ChangeTrackerMixin
+from plane.workflow.guards import GuardedIssueManager, GuardedAllIssueManager
 from plane.utils.exception_logger import log_exception
 from .project import ProjectBaseModel
 from plane.utils.uuid import convert_uuid_to_integer
@@ -92,7 +93,7 @@ def get_default_display_properties():
 
 
 # TODO: Handle identifiers for Bulk Inserts - nk
-class IssueManager(SoftDeletionManager):
+class IssueManager(GuardedIssueManager):
     def get_queryset(self):
         return (
             super()
@@ -115,6 +116,8 @@ CLAUDE_AI_MODELS = {
     "haiku": (),
 }
 OPENAI_AI_MODELS = {
+    "gpt-6-astra": ("low", "medium", "high", "xhigh", "max"),
+    "gpt-5.6-sol": ("low", "medium", "high", "xhigh", "max"),
     "gpt-5.6-terra": ("low", "medium", "high", "xhigh", "max", "ultra"),
     "gpt-5.6-luna": ("low", "medium", "high", "xhigh", "max"),
     "gpt-5.5": ("low", "medium", "high", "xhigh"),
@@ -209,6 +212,8 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
         blank=True,
     )
 
+    objects = GuardedIssueManager()
+    all_objects = GuardedAllIssueManager()
     issue_objects = IssueManager()
 
     class Meta:
@@ -218,7 +223,21 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
         ordering = ("-created_at",)
 
     def save(self, *args, **kwargs):
+        from plane.workflow.guards import check_state, enabled, WorkflowWriteRequired
+
+        previous = (
+            None
+            if self._state.adding
+            else Issue.all_objects.filter(pk=self.pk).values("state_id", "project_id", "deleted_at").first()
+        )
+        if (
+            previous
+            and enabled(previous["project_id"])
+            and (previous["project_id"] != self.project_id or previous["deleted_at"] != self.deleted_at)
+        ):
+            raise WorkflowWriteRequired()
         self._ensure_default_state()
+        check_state(self.project_id, previous["state_id"] if previous else None, self.state_id, creating=not previous)
         kwargs = self._sync_completed_at(kwargs)
         kwargs = self._sync_start_target(kwargs)
 
