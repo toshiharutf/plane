@@ -66,6 +66,9 @@ export const saveTabPreferences = (projectId: string, preferences: TTabPreferenc
 export const getTabUrl = (workspaceSlug: string, projectId: string, tabKey: string): string => {
   const baseUrl = `/${workspaceSlug}/projects/${projectId}`;
   const tabUrlMap: Record<string, string> = {
+    project_progress: `${baseUrl}/progress`,
+    releases: `${baseUrl}/releases`,
+    decisions: `${baseUrl}/decisions`,
     work_items: `${baseUrl}/issues`,
     cycles: `${baseUrl}/cycles`,
     modules: `${baseUrl}/modules`,

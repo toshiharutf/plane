@@ -1,3 +1,4 @@
+import { commandError } from "@/components/project-delivery/utils";
 /**
  * Copyright (c) 2023-present Plane Software, Inc. and contributors
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -94,7 +95,11 @@ export const useGroupIssuesDragNDrop = (
       delete data[moduleKey];
     }
 
-    updateIssue && updateIssue(projectId, issueId, data).catch(() => setToast(errorToastProps));
+    if (updateIssue) {
+      updateIssue(projectId, issueId, data).catch((error) =>
+        setToast({ ...errorToastProps, message: commandError(error) })
+      );
+    }
   };
 
   const handleOnDrop = async (source: GroupDropLocation, destination: GroupDropLocation) => {

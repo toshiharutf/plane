@@ -1,3 +1,4 @@
+import { WorkflowWorkPanel } from "../workflow-work-panel";
 // oxlint-disable no-shadow
 /**
  * Copyright (c) 2023-present Plane Software, Inc. and contributors
@@ -86,6 +87,7 @@ export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetai
       {!isArchived && (
         <HumanRequestBanner workspaceSlug={workspaceSlug} projectId={issue.project_id} issueId={issueId} />
       )}
+      <WorkflowWorkPanel workspaceSlug={workspaceSlug} projectId={issue.project_id} issueId={issueId} />
       {issue.parent_id && (
         <IssueParentDetail
           workspaceSlug={workspaceSlug}

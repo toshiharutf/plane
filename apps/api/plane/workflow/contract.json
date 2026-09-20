@@ -1,0 +1,554 @@
+{
+  "schema_version": 1,
+  "workflow_version": 2,
+  "capability_schema_version": 1,
+  "evidence_schema_version": 1,
+  "canonical_json": {
+    "sort_keys": true,
+    "separators": [
+      ",",
+      ":"
+    ],
+    "ensure_ascii": false,
+    "allow_nan": false,
+    "encoding": "utf-8",
+    "digest": "sha256"
+  },
+  "roles": [
+    "project_planner",
+    "developer",
+    "pr_reviewer",
+    "system_tester",
+    "system_deployer"
+  ],
+  "command_fields": [
+    "workflow_version",
+    "command_id",
+    "action",
+    "subject_type",
+    "subject_id",
+    "expected_version",
+    "payload"
+  ],
+  "next_actions": [
+    "develop",
+    "review",
+    "verify_manual_completion"
+  ],
+  "global_guards": [
+    "authenticated_capability",
+    "expected_version",
+    "workflow_activated",
+    "durable_command"
+  ],
+  "guard_ids": [
+    "actionable_human_answer",
+    "active_scope",
+    "all_checks_passed",
+    "all_publication_observed",
+    "authenticated_capability",
+    "check_passed_or_incomplete",
+    "code_evidence",
+    "code_failure",
+    "deployment_approval",
+    "develop",
+    "durable_command",
+    "expected_version",
+    "frozen_inputs",
+    "health_observed",
+    "human_cancel",
+    "installation_observed",
+    "integration_evidence",
+    "manual_evidence",
+    "non_code_failure",
+    "non_code_repair",
+    "obsolete_question",
+    "partial_publication",
+    "persisted_blocker",
+    "product_failure",
+    "replacement_authorized",
+    "restoration_observed",
+    "review",
+    "review_changes",
+    "scope_evidence",
+    "unknown_failure",
+    "verified_no_mutation",
+    "verify_manual_completion",
+    "workflow_activated"
+  ],
+  "evidence_fields": {
+    "submission": [
+      "head_sha",
+      "base_sha",
+      "checks",
+      "post_session_checks"
+    ],
+    "integration": [
+      "head_sha",
+      "integration_sha",
+      "expected_base_sha",
+      "observed_ref",
+      "receipt_digest",
+      "checks",
+      "base_unchanged",
+      "head_is_ancestor"
+    ],
+    "check": [
+      "run_id",
+      "definition_digest",
+      "manifest_digest",
+      "artifact_digest",
+      "outcome",
+      "evidence"
+    ],
+    "health": [
+      "artifact_digest",
+      "config_digest",
+      "checks",
+      "observation_seconds",
+      "receipt_digest"
+    ]
+  },
+  "workflows": {
+    "work": {
+      "states": {
+        "backlog": {
+          "id": "work.backlog",
+          "label": "Backlog"
+        },
+        "todo": {
+          "id": "work.todo",
+          "label": "Todo"
+        },
+        "in_progress": {
+          "id": "work.in_progress",
+          "label": "In Progress"
+        },
+        "in_review": {
+          "id": "work.in_review",
+          "label": "In Review"
+        },
+        "awaiting_human": {
+          "id": "work.awaiting_human",
+          "label": "Awaiting Human"
+        },
+        "done": {
+          "id": "work.done",
+          "label": "Done"
+        },
+        "cancelled": {
+          "id": "work.cancelled",
+          "label": "Cancelled"
+        }
+      },
+      "initial_state": "backlog",
+      "transitions": [
+        {
+          "command": "activate",
+          "from": "backlog",
+          "to": "todo",
+          "guard": "active_scope"
+        },
+        {
+          "command": "claim",
+          "from": "todo",
+          "to": "in_progress",
+          "guard": "develop"
+        },
+        {
+          "command": "claim",
+          "from": "todo",
+          "to": "in_review",
+          "guard": "review"
+        },
+        {
+          "command": "claim",
+          "from": "todo",
+          "to": "in_progress",
+          "guard": "verify_manual_completion"
+        },
+        {
+          "command": "claim",
+          "from": "in_review",
+          "to": "in_progress",
+          "guard": "develop"
+        },
+        {
+          "command": "submit",
+          "from": "in_progress",
+          "to": "in_review",
+          "guard": "code_evidence"
+        },
+        {
+          "command": "integrate",
+          "from": "in_review",
+          "to": "done",
+          "guard": "integration_evidence"
+        },
+        {
+          "command": "request_changes",
+          "from": "in_review",
+          "to": "in_review",
+          "guard": "review_changes"
+        },
+        {
+          "command": "manual_verify",
+          "from": "todo",
+          "to": "done",
+          "guard": "manual_evidence"
+        },
+        {
+          "command": "manual_verify",
+          "from": "in_progress",
+          "to": "done",
+          "guard": "manual_evidence"
+        },
+        {
+          "command": "ask_human",
+          "from": "backlog",
+          "to": "awaiting_human",
+          "guard": "persisted_blocker"
+        },
+        {
+          "command": "ask_human",
+          "from": "todo",
+          "to": "awaiting_human",
+          "guard": "persisted_blocker"
+        },
+        {
+          "command": "ask_human",
+          "from": "in_progress",
+          "to": "awaiting_human",
+          "guard": "persisted_blocker"
+        },
+        {
+          "command": "ask_human",
+          "from": "in_review",
+          "to": "awaiting_human",
+          "guard": "persisted_blocker"
+        },
+        {
+          "command": "resolve_human",
+          "from": "awaiting_human",
+          "to": "todo",
+          "guard": "actionable_human_answer"
+        },
+        {
+          "command": "withdraw_human",
+          "from": "awaiting_human",
+          "to": "todo",
+          "guard": "obsolete_question"
+        },
+        {
+          "command": "cancel",
+          "from": "backlog",
+          "to": "cancelled",
+          "guard": "human_cancel"
+        },
+        {
+          "command": "cancel",
+          "from": "todo",
+          "to": "cancelled",
+          "guard": "human_cancel"
+        },
+        {
+          "command": "cancel",
+          "from": "in_progress",
+          "to": "cancelled",
+          "guard": "human_cancel"
+        },
+        {
+          "command": "cancel",
+          "from": "in_review",
+          "to": "cancelled",
+          "guard": "human_cancel"
+        },
+        {
+          "command": "cancel",
+          "from": "awaiting_human",
+          "to": "cancelled",
+          "guard": "human_cancel"
+        }
+      ]
+    },
+    "candidate": {
+      "states": {
+        "draft": {
+          "id": "candidate.draft",
+          "label": "Draft"
+        },
+        "frozen": {
+          "id": "candidate.frozen",
+          "label": "Frozen"
+        },
+        "validating": {
+          "id": "candidate.validating",
+          "label": "Validating"
+        },
+        "qualified": {
+          "id": "candidate.qualified",
+          "label": "Qualified"
+        },
+        "published": {
+          "id": "candidate.published",
+          "label": "Published"
+        },
+        "rejected": {
+          "id": "candidate.rejected",
+          "label": "Rejected"
+        },
+        "superseded": {
+          "id": "candidate.superseded",
+          "label": "Superseded"
+        }
+      },
+      "initial_state": "draft",
+      "transitions": [
+        {
+          "command": "freeze",
+          "from": "draft",
+          "to": "frozen",
+          "guard": "scope_evidence"
+        },
+        {
+          "command": "start_checks",
+          "from": "frozen",
+          "to": "validating",
+          "guard": "frozen_inputs"
+        },
+        {
+          "command": "start_checks",
+          "from": "validating",
+          "to": "validating",
+          "guard": "frozen_inputs"
+        },
+        {
+          "command": "record_check",
+          "from": "validating",
+          "to": "validating",
+          "guard": "check_passed_or_incomplete"
+        },
+        {
+          "command": "record_check",
+          "from": "validating",
+          "to": "rejected",
+          "guard": "product_failure"
+        },
+        {
+          "command": "qualify",
+          "from": "validating",
+          "to": "qualified",
+          "guard": "all_checks_passed"
+        },
+        {
+          "command": "publish",
+          "from": "qualified",
+          "to": "qualified",
+          "guard": "partial_publication"
+        },
+        {
+          "command": "publish",
+          "from": "qualified",
+          "to": "published",
+          "guard": "all_publication_observed"
+        },
+        {
+          "command": "supersede",
+          "from": "draft",
+          "to": "superseded",
+          "guard": "replacement_authorized"
+        },
+        {
+          "command": "supersede",
+          "from": "frozen",
+          "to": "superseded",
+          "guard": "replacement_authorized"
+        },
+        {
+          "command": "supersede",
+          "from": "validating",
+          "to": "superseded",
+          "guard": "replacement_authorized"
+        },
+        {
+          "command": "supersede",
+          "from": "qualified",
+          "to": "superseded",
+          "guard": "replacement_authorized"
+        }
+      ]
+    },
+    "deployment": {
+      "states": {
+        "pending": {
+          "id": "deployment.pending",
+          "label": "Pending"
+        },
+        "deploying": {
+          "id": "deployment.deploying",
+          "label": "Deploying"
+        },
+        "verifying": {
+          "id": "deployment.verifying",
+          "label": "Verifying"
+        },
+        "healthy": {
+          "id": "deployment.healthy",
+          "label": "Healthy"
+        },
+        "recovery_required": {
+          "id": "deployment.recovery_required",
+          "label": "Recovery Required"
+        },
+        "rolling_back": {
+          "id": "deployment.rolling_back",
+          "label": "Rolling Back"
+        },
+        "rolled_back": {
+          "id": "deployment.rolled_back",
+          "label": "Rolled Back"
+        },
+        "failed": {
+          "id": "deployment.failed",
+          "label": "Failed"
+        },
+        "cancelled": {
+          "id": "deployment.cancelled",
+          "label": "Cancelled"
+        }
+      },
+      "initial_state": "pending",
+      "transitions": [
+        {
+          "command": "start",
+          "from": "pending",
+          "to": "deploying",
+          "guard": "deployment_approval"
+        },
+        {
+          "command": "installed",
+          "from": "deploying",
+          "to": "verifying",
+          "guard": "installation_observed"
+        },
+        {
+          "command": "healthy",
+          "from": "verifying",
+          "to": "healthy",
+          "guard": "health_observed"
+        },
+        {
+          "command": "retry",
+          "from": "recovery_required",
+          "to": "pending",
+          "guard": "non_code_repair"
+        },
+        {
+          "command": "restored",
+          "from": "rolling_back",
+          "to": "rolled_back",
+          "guard": "restoration_observed"
+        },
+        {
+          "command": "cancel",
+          "from": "pending",
+          "to": "cancelled",
+          "guard": "human_cancel"
+        },
+        {
+          "command": "abandon",
+          "from": "deploying",
+          "to": "failed",
+          "guard": "verified_no_mutation"
+        },
+        {
+          "command": "abandon",
+          "from": "recovery_required",
+          "to": "failed",
+          "guard": "verified_no_mutation"
+        },
+        {
+          "command": "diagnose",
+          "from": "deploying",
+          "to": "deploying",
+          "guard": "unknown_failure"
+        },
+        {
+          "command": "diagnose",
+          "from": "deploying",
+          "to": "recovery_required",
+          "guard": "non_code_failure"
+        },
+        {
+          "command": "diagnose",
+          "from": "deploying",
+          "to": "rolling_back",
+          "guard": "code_failure"
+        },
+        {
+          "command": "diagnose",
+          "from": "verifying",
+          "to": "verifying",
+          "guard": "unknown_failure"
+        },
+        {
+          "command": "diagnose",
+          "from": "verifying",
+          "to": "recovery_required",
+          "guard": "non_code_failure"
+        },
+        {
+          "command": "diagnose",
+          "from": "verifying",
+          "to": "rolling_back",
+          "guard": "code_failure"
+        },
+        {
+          "command": "diagnose",
+          "from": "recovery_required",
+          "to": "recovery_required",
+          "guard": "unknown_failure"
+        },
+        {
+          "command": "diagnose",
+          "from": "recovery_required",
+          "to": "recovery_required",
+          "guard": "non_code_failure"
+        },
+        {
+          "command": "diagnose",
+          "from": "recovery_required",
+          "to": "rolling_back",
+          "guard": "code_failure"
+        }
+      ]
+    }
+  },
+  "non_transition_actions": {
+    "work": [
+      "enroll",
+      "estimate",
+      "override"
+    ],
+    "candidate": [
+      "request_publication",
+      "revoke"
+    ],
+    "deployment": [
+      "plan",
+      "request_approval"
+    ]
+  },
+  "non_transition_commands": {
+    "work": {
+      "propose_followup": "Retain source phase and lease; create inactive Backlog work with immutable origin evidence. Blocking links prevent submit/integrate."
+    },
+    "deployment": {
+      "request_finalization": "Create an exact post-health operation decision; remain Healthy.",
+      "finalize": "Create bounded finalization intents under matching approval; remain Healthy."
+    },
+    "configuration": {
+      "migrate": "Recheck source snapshots and atomically activate v2 with legacy scheduler disabled; never transfer legacy approval authority."
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { CycleDeliverySummary } from "@/components/project-delivery/cycle-summary";
 /**
  * Copyright (c) 2023-present Plane Software, Inc. and contributors
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -66,8 +67,11 @@ function CycleDetailPage({ params }: Route.ComponentProps) {
       ) : (
         <>
           <div className="flex h-full w-full">
-            <div className="h-full w-full overflow-hidden">
-              <CycleLayoutRoot />
+            <div className="flex h-full w-full flex-col overflow-hidden">
+              <CycleDeliverySummary workspaceSlug={workspaceSlug} projectId={projectId} cycleId={cycleId} />
+              <div className="min-h-0 flex-1">
+                <CycleLayoutRoot />
+              </div>
             </div>
             {!isSidebarCollapsed && (
               <div

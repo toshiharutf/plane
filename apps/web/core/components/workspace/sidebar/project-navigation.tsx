@@ -8,6 +8,7 @@ import React, { useCallback, useMemo } from "react";
 import { observer } from "mobx-react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
+import { ChartNoAxesCombined, PackageCheck, Inbox } from "lucide-react";
 import { EUserPermissionsLevel, EUserPermissions } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 import { CycleIcon, IntakeIcon, ModuleIcon, PageIcon, ViewsIcon, WorkItemsIcon } from "@plane/propel/icons";
@@ -70,6 +71,36 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
 
   const baseNavigation = useCallback(
     (workspaceSlug: string, projectId: string): TNavigationItem[] => [
+      {
+        i18n_key: "sidebar.project_progress",
+        key: "project_progress",
+        name: "Project progress",
+        href: `/${workspaceSlug}/projects/${projectId}/progress`,
+        icon: ChartNoAxesCombined,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 0,
+      },
+      {
+        i18n_key: "sidebar.releases",
+        key: "releases",
+        name: "Releases",
+        href: `/${workspaceSlug}/projects/${projectId}/releases`,
+        icon: PackageCheck,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 7,
+      },
+      {
+        i18n_key: "sidebar.decisions",
+        key: "decisions",
+        name: "Decisions",
+        href: `/${workspaceSlug}/projects/${projectId}/decisions`,
+        icon: Inbox,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 8,
+      },
       {
         i18n_key: "sidebar.work_items",
         key: "work_items",

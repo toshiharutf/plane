@@ -56,7 +56,9 @@ export const ProjectHeader = observer(function ProjectHeader(props: TProjectHead
     () =>
       availableTabKeys.includes(tabPreferences.defaultTab)
         ? tabPreferences.defaultTab
-        : availableTabKeys[0] || "work_items",
+        : availableTabKeys.includes("work_items")
+          ? "work_items"
+          : availableTabKeys[0] || "work_items",
     [availableTabKeys, tabPreferences.defaultTab]
   );
 

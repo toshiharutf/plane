@@ -179,6 +179,9 @@ def check_state_change(actor, issue, target_state, requested_assignee_ids=()):
     exceptions) only on work items that have an AI_AGENT bot among their current or
     requested assignees. ``actor`` ``None`` (a background task) is never checked.
     """
+    if issue is not None:
+        from plane.workflow.guards import check_state
+        check_state(issue.project_id, issue.state_id, getattr(target_state, 'id', None))
     if actor is None or target_state is None or issue is None:
         return
     if issue.state_id is not None and issue.state_id == target_state.id:

@@ -6,6 +6,7 @@
 
 import { useMemo, useCallback } from "react";
 // plane imports
+import { ChartNoAxesCombined, PackageCheck, Inbox } from "lucide-react";
 import { EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import { CycleIcon, IntakeIcon, ModuleIcon, PageIcon, ViewsIcon, WorkItemsIcon } from "@plane/propel/icons";
 import type { EUserProjectRoles, IPartialProject } from "@plane/types";
@@ -33,6 +34,36 @@ export const useNavigationItems = ({
   const baseNavigation = useCallback(
     // oxlint-disable-next-line no-shadow
     (workspaceSlug: string, projectId: string): TNavigationItem[] => [
+      {
+        i18n_key: "sidebar.project_progress",
+        key: "project_progress",
+        name: "Project progress",
+        href: `/${workspaceSlug}/projects/${projectId}/progress`,
+        icon: ChartNoAxesCombined,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 0,
+      },
+      {
+        i18n_key: "sidebar.releases",
+        key: "releases",
+        name: "Releases",
+        href: `/${workspaceSlug}/projects/${projectId}/releases`,
+        icon: PackageCheck,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 7,
+      },
+      {
+        i18n_key: "sidebar.decisions",
+        key: "decisions",
+        name: "Decisions",
+        href: `/${workspaceSlug}/projects/${projectId}/decisions`,
+        icon: Inbox,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 8,
+      },
       {
         i18n_key: "sidebar.work_items",
         key: "work_items",

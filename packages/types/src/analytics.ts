@@ -113,6 +113,14 @@ export type TAIUsageWorkItem = TAIUsageTokenMetrics & {
   project_identifier: string;
   name: string;
   completed_at: string | null;
+  api_cost_usd?: number | string | null;
+  known_api_cost_usd?: number | string | null;
+  unknown_cost_count?: number;
+  duration_seconds?: number | null;
+  unknown_duration_count?: number;
+  cost_categories_usd?: Record<string, number | string> | null;
+  known_cost_categories_usd?: Record<string, number | string>;
+  unknown_category_count?: number;
 };
 
 export type TAIUsageModel = {

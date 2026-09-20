@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from plane.utils.ai_pricing import PRICE_VERSION, compute_cost, model_prices, normalize_model
+from plane.utils.ai_pricing import CODEX_SNAPSHOT, PRICE_VERSION, compute_cost, model_prices, normalize_model
 
 
 @pytest.mark.unit
@@ -53,3 +53,27 @@ class TestAIPricing:
     def test_small_costs_round_to_micro_dollars(self):
         cost, _ = compute_cost("claude-haiku-4-5", input_tokens=1, output_tokens=1)
         assert cost == Decimal("0.000006")
+
+    @pytest.mark.parametrize("model", list(CODEX_SNAPSHOT["models"]))
+    def test_codex_disjoint_input_and_cache_categories(self, model):
+        rates = CODEX_SNAPSHOT["models"][model]
+        cost, version = compute_cost(model, input_tokens=100_000, cache_read_tokens=50_000, output_tokens=10_000)
+        expected = (
+            Decimal(str(rates["input"])) / 10
+            + Decimal(str(rates["cached_input"])) / 20
+            + Decimal(str(rates["output"])) / 100
+        )
+        assert cost == expected
+        assert version == CODEX_SNAPSHOT["price_version"]
+        assert len(version) <= 32
+        assert normalize_model(f"openai/{model}-high") == model
+
+    def test_codex_long_context_threshold_counts_cached_input_once(self):
+        assert model_prices("gpt-6-astra", input_tokens=172_000, cache_read_tokens=100_000)["input"] == 10
+        prices = model_prices("gpt-6-astra", input_tokens=172_001, cache_read_tokens=100_000)
+        assert prices["input"] == 20
+        assert prices["cache_read"] == 2
+        assert prices["output"] == 75
+
+    def test_undefined_codex_cache_writes_remain_unknown(self):
+        assert compute_cost("gpt-6-astra", cache_write_5m_tokens=1)[0] is None

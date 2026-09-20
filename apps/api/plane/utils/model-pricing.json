@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "price_version": "codex-api-equiv-2026-09-20",
+  "currency": "USD",
+  "unit_tokens": 1000000,
+  "source": "https://developers.openai.com/api/docs/pricing",
+  "as_of": "2026-09-20",
+  "basis": "Historical repository API-equivalent budget estimate; not subscription billing",
+  "input_includes_cached": true,
+  "long_context": {
+    "input_threshold_exclusive": 272000,
+    "input_multiplier": 2,
+    "cached_input_multiplier": 2,
+    "output_multiplier": 1.5
+  },
+  "models": {
+    "gpt-6-astra": {
+      "input": 10,
+      "cached_input": 1,
+      "output": 50
+    },
+    "gpt-5.6-sol": {
+      "input": 4,
+      "cached_input": 0.4,
+      "output": 20
+    },
+    "gpt-5.6-terra": {
+      "input": 2,
+      "cached_input": 0.2,
+      "output": 12
+    },
+    "gpt-5.6-luna": {
+      "input": 0.2,
+      "cached_input": 0.02,
+      "output": 1.2
+    }
+  }
+}

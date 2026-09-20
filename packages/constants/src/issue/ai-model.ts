@@ -26,6 +26,8 @@ export const AI_MODEL_GROUPS: TAIModelGroup[] = [
   {
     provider: "OpenAI",
     models: [
+      { name: "gpt-6-astra", efforts: ["low", "medium", "high", "xhigh", "max"] },
+      { name: "gpt-5.6-sol", efforts: ["low", "medium", "high", "xhigh", "max"] },
       { name: "gpt-5.6-terra", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"] },
       { name: "gpt-5.6-luna", efforts: ["low", "medium", "high", "xhigh", "max"] },
       { name: "gpt-5.5", efforts: ["low", "medium", "high", "xhigh"] },

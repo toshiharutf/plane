@@ -9,6 +9,7 @@ from django.db import IntegrityError
 
 #  Third party imports
 from rest_framework import serializers
+from plane.workflow.serializer import WorkContinuationField
 
 # Module imports
 from plane.db.models import (
@@ -53,6 +54,8 @@ class IssueSerializer(BaseSerializer):
     and related model updates. Supports dynamic field expansion and HTML content
     processing.
     """
+
+    workflow_v2 = WorkContinuationField()
 
     assignees = serializers.ListField(
         child=serializers.PrimaryKeyRelatedField(queryset=User.objects.values_list("id", flat=True)),
